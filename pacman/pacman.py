@@ -355,15 +355,99 @@ GRID_MAP = [
     "1111111111111111111111111111"
 ]
 
+# Level 2: a more open "comb" layout -- same tunnel/ghost-house core as Level 1
+# (rows 9-19 below are identical across all levels so the hardcoded ghost-house
+# gate/home logic keeps working), with a fresh top/bottom maze around it.
+GRID_MAP_LEVEL2 = [
+    "1111111111111111111111111111",
+    "1321122221122222211222211231",
+    "1222222222222222222222222221",
+    "1222221122222112222211222221",
+    "1222222222222222222222222221",
+    "1221122221122222211222211221",
+    "1222222222222222222222222221",
+    "1222221122222112222211222221",
+    "1222222222222222222222222221",
+    "1111112111110110111112111111",
+    "0000012111110110111112100000",
+    "0000012110000000000112100000",
+    "0000012110111441110112100000",
+    "1111112110100000010112111111",
+    "0000002000100000010002000000",
+    "1111112110100000010112111111",
+    "0000012110111111110112100000",
+    "0000012110000000000112100000",
+    "0000012110111111110112100000",
+    "1111112112111111112112111111",
+    "1222222222222222222222222221",
+    "1221122221122222211222211221",
+    "1222222222222222222222222221",
+    "1222222222222022222222222221",
+    "1222221122222222222211222221",
+    "1222222222222222222222222221",
+    "1221122221122222211222211221",
+    "1222222222222222222222222221",
+    "1322221122222222222211222231",
+    "1222222222222222222222222221",
+    "1111111111111111111111111111",
+]
+
+# Level 3: denser pillar pattern for a tighter, trickier maze -- same core again.
+GRID_MAP_LEVEL3 = [
+    "1111111111111111111111111111",
+    "1311122211221111221122211131",
+    "1222222222222222222222222221",
+    "1222211222112222112221122221",
+    "1222222222222222222222222221",
+    "1211122211221111221122211121",
+    "1222222222222222222222222221",
+    "1222211222112222112221122221",
+    "1222222222222222222222222221",
+    "1111112111110110111112111111",
+    "0000012111110110111112100000",
+    "0000012110000000000112100000",
+    "0000012110111441110112100000",
+    "1111112110100000010112111111",
+    "0000002000100000010002000000",
+    "1111112110100000010112111111",
+    "0000012110111111110112100000",
+    "0000012110000000000112100000",
+    "0000012110111111110112100000",
+    "1111112112111111112112111111",
+    "1222222222222222222222222221",
+    "1211122211221221221122211121",
+    "1222222222222222222222222221",
+    "1222222222222022222222222221",
+    "1222211222112222112221122221",
+    "1222222222222222222222222221",
+    "1211122211222222221122211121",
+    "1222222222222222222222222221",
+    "1322211222112222112221122231",
+    "1222222222222222222222222221",
+    "1111111111111111111111111111",
+]
+
+LEVEL_MAPS = [GRID_MAP, GRID_MAP_LEVEL2, GRID_MAP_LEVEL3]
+
+# Wall (outer, inner) colors per level, purely cosmetic so each level reads as new.
+LEVEL_THEMES = {
+    1: ((25, 40, 180), (40, 90, 255)),    # Blue (original)
+    2: ((150, 30, 180), (215, 70, 255)),  # Magenta
+    3: ((20, 150, 90), (60, 230, 150)),   # Teal/green
+}
+
 # ==========================================
 # MAZE MANAGEMENT
 # ==========================================
 class Maze:
     def __init__(self):
-        self.reset()
+        self.reset(1)
 
-    def reset(self):
-        self.grid = [list(row) for row in GRID_MAP]
+    def reset(self, level=1):
+        self.level = level
+        grid_map = LEVEL_MAPS[(level - 1) % len(LEVEL_MAPS)]
+        self.wall_color, self.wall_inner_color = LEVEL_THEMES.get(level, LEVEL_THEMES[1])
+        self.grid = [list(row) for row in grid_map]
         self.pellets_left = 0
         for r in range(MAP_ROWS):
             for c in range(MAP_COLS):
@@ -386,12 +470,12 @@ class Maze:
                 cell = self.grid[r][c]
                 x = c * TILE_SIZE
                 y = r * TILE_SIZE + HEADER_HEIGHT
-                
+
                 if cell == '1':
                     rect = pygame.Rect(x, y, TILE_SIZE, TILE_SIZE)
-                    pygame.draw.rect(surface, COLOR_MAZE_WALL, rect, border_radius=4)
+                    pygame.draw.rect(surface, self.wall_color, rect, border_radius=4)
                     inner_rect = pygame.Rect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4)
-                    pygame.draw.rect(surface, COLOR_MAZE_WALL_INNER, inner_rect, 1, border_radius=3)
+                    pygame.draw.rect(surface, self.wall_inner_color, inner_rect, 1, border_radius=3)
                 elif cell == '2':
                     pygame.draw.circle(surface, COLOR_PELLET, (x + TILE_SIZE // 2, y + TILE_SIZE // 2), 3)
                 elif cell == '3':
@@ -573,6 +657,7 @@ class Ghost:
         self.spawn_col = spawn_col
         self.spawn_row = spawn_row
         self.scatter_target = scatter_target
+        self.speed_scale = 1.0  # bumped up per level for increasing difficulty
         self.reset()
 
     def reset(self):
@@ -595,11 +680,11 @@ class Ghost:
             self.frightened_timer -= 1
             if self.frightened_timer <= 0:
                 self.mode = Ghost.MODE_CHASE
-            self.speed = 1.2
+            self.speed = 1.2 * self.speed_scale
         elif self.mode == Ghost.MODE_EATEN:
-            self.speed = 4.0
+            self.speed = 4.0 * self.speed_scale
         else:
-            self.speed = 2.0
+            self.speed = 2.0 * self.speed_scale
 
         # Handle Tunnel Wrap
         if self.x < -TILE_SIZE / 2: self.x = GAME_WIDTH - TILE_SIZE / 2
@@ -729,13 +814,17 @@ class PacmanGame:
     STATE_PLAYING = 'PLAYING'
     STATE_DIED = 'DIED'
     STATE_GAME_OVER = 'GAME_OVER'
+    STATE_LEVEL_COMPLETE = 'LEVEL_COMPLETE'
     STATE_VICTORY = 'VICTORY'
 
     def __init__(self):
         pygame.init()
         pygame.display.set_caption("Pac-Man: Camera Hand Gesture Control")
         
-        self.screen = pygame.display.set_mode((TOTAL_WIDTH, TOTAL_GAME_HEIGHT))
+        self.fullscreen = True
+        self.screen = pygame.display.set_mode(
+            (TOTAL_WIDTH, TOTAL_GAME_HEIGHT), pygame.FULLSCREEN | pygame.SCALED
+        )
         self.clock = pygame.time.Clock()
         self.font = pygame.font.SysFont("Courier", 20, bold=True)
         self.large_font = pygame.font.SysFont("Arial", 36, bold=True)
@@ -745,7 +834,7 @@ class PacmanGame:
 
         self.score = 0
         self.high_score = 1000
-        self.lives = 3
+        self.lives = 20
         self.level = 1
 
         self.maze = Maze()
@@ -774,6 +863,21 @@ class PacmanGame:
         for g in self.ghosts:
             g.reset()
 
+    def _load_level(self, level):
+        self.maze.reset(level)
+        self.reset_positions()
+        for g in self.ghosts:
+            g.speed_scale = 1.0 + (level - 1) * 0.15
+
+    def _frightened_duration(self):
+        # Power pellets stay effective for less time on later, harder levels.
+        return max(3 * FPS, int(8 * FPS - (self.level - 1) * 2 * FPS))
+
+    def _toggle_fullscreen(self):
+        self.fullscreen = not self.fullscreen
+        flags = (pygame.FULLSCREEN | pygame.SCALED) if self.fullscreen else pygame.SCALED
+        self.screen = pygame.display.set_mode((TOTAL_WIDTH, TOTAL_GAME_HEIGHT), flags)
+
     def run(self):
         running = True
         while running:
@@ -786,6 +890,8 @@ class PacmanGame:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
+                    elif event.key == pygame.K_F11:
+                        self._toggle_fullscreen()
                     # Fallback keyboard controls for manual testing
                     elif event.key == pygame.K_UP: self.pacman.next_dir = DIR_UP
                     elif event.key == pygame.K_DOWN: self.pacman.next_dir = DIR_DOWN
@@ -845,15 +951,19 @@ class PacmanGame:
                     self.maze.pellets_left -= 1
                     self.synth.play('energizer')
                     for g in self.ghosts:
-                        g.set_frightened()
+                        g.set_frightened(self._frightened_duration())
 
             if self.score > self.high_score:
                 self.high_score = self.score
 
-            # Check Victory
+            # Check Level Complete / Final Victory
             if self.maze.pellets_left <= 0:
-                self.state = PacmanGame.STATE_VICTORY
-                self._arm_restart()
+                if self.level < len(LEVEL_MAPS):
+                    self.state = PacmanGame.STATE_LEVEL_COMPLETE
+                    self.state_timer = int(2.5 * FPS)
+                else:
+                    self.state = PacmanGame.STATE_VICTORY
+                    self._arm_restart()
 
             # Update Ghosts
             blinky_pos = (int(self.ghosts[0].x // TILE_SIZE), int(self.ghosts[0].y // TILE_SIZE))
@@ -885,6 +995,14 @@ class PacmanGame:
                     self.state = PacmanGame.STATE_GAME_OVER
                     self._arm_restart()
 
+        elif self.state == PacmanGame.STATE_LEVEL_COMPLETE:
+            self.state_timer -= 1
+            if self.state_timer <= 0:
+                self.level += 1
+                self._load_level(self.level)
+                self.state = PacmanGame.STATE_COUNTDOWN
+                self.state_timer = 3 * FPS
+
     def _arm_restart(self):
         # Ignore gestures briefly, and clear the sticky gesture, so the player
         # must make a fresh hand movement to restart from an end screen.
@@ -894,9 +1012,9 @@ class PacmanGame:
 
     def _restart_game(self):
         self.score = 0
-        self.lives = 3
-        self.maze.reset()
-        self.reset_positions()
+        self.lives = 20
+        self.level = 1
+        self._load_level(self.level)
         self.state = PacmanGame.STATE_COUNTDOWN
         self.state_timer = 2 * FPS
 
@@ -910,8 +1028,10 @@ class PacmanGame:
         # Header (Scores & Lives)
         score_txt = self.font.render(f"SCORE: {self.score:05d}", True, COLOR_TEXT)
         high_txt = self.font.render(f"HIGH: {self.high_score:05d}", True, COLOR_ACCENT)
+        level_txt = self.font.render(f"LEVEL {self.level}/{len(LEVEL_MAPS)}", True, COLOR_PACMAN)
         game_surface.blit(score_txt, (15, 15))
         game_surface.blit(high_txt, (GAME_WIDTH - high_txt.get_width() - 15, 15))
+        game_surface.blit(level_txt, (GAME_WIDTH // 2 - level_txt.get_width() // 2, 15))
 
         # Maze & Entities
         self.maze.draw(game_surface)
@@ -931,11 +1051,16 @@ class PacmanGame:
             secs = math.ceil(self.state_timer / FPS)
             txt = self.large_font.render(f"READY! {secs}", True, COLOR_PACMAN)
             game_surface.blit(txt, (GAME_WIDTH // 2 - txt.get_width() // 2, GAME_HEIGHT // 2 + 30))
+        elif self.state == PacmanGame.STATE_LEVEL_COMPLETE:
+            txt = self.large_font.render(f"LEVEL {self.level} COMPLETE!", True, COLOR_ACCENT)
+            sub = self.font.render(f"Get ready for Level {self.level + 1}...", True, COLOR_TEXT)
+            game_surface.blit(txt, (GAME_WIDTH // 2 - txt.get_width() // 2, GAME_HEIGHT // 2))
+            game_surface.blit(sub, (GAME_WIDTH // 2 - sub.get_width() // 2, GAME_HEIGHT // 2 + 45))
         elif self.state in (PacmanGame.STATE_GAME_OVER, PacmanGame.STATE_VICTORY):
             if self.state == PacmanGame.STATE_GAME_OVER:
                 txt = self.large_font.render("GAME OVER", True, (255, 50, 50))
             else:
-                txt = self.large_font.render("YOU WIN!", True, COLOR_ACCENT)
+                txt = self.large_font.render("YOU WIN! ALL LEVELS CLEARED!", True, COLOR_ACCENT)
             game_surface.blit(txt, (GAME_WIDTH // 2 - txt.get_width() // 2, GAME_HEIGHT // 2))
 
             if self.restart_cooldown > 0:
