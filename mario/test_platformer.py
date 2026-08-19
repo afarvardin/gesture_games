@@ -60,6 +60,31 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
             commit_walk = False
         want_run = run_flag and not commit_walk
         water = g.in_water()
+        # Bowser cannot be stomped and takes five fireballs. Charging him is running
+        # into a wall that hits back, so hold at range and shoot -- and do it whether
+        # or not we happen to be grounded, since arriving mid-jump skipped the check
+        # entirely and walked straight into him.
+        if g.state == "play" and any(
+                e.alive and e.dying <= 0 and e.armoured and 0 < e.x - h.x < 6 * P.TILE
+                for e in g.enemies):
+            lives_before = g.lives
+            g.throw(now)
+            if any(hm.alive and hm.flat and -0.5 * P.TILE < hm.x - h.x < 5 * P.TILE
+                   for hm in g.hammers):
+                h.request_jump(strength, now)
+            g.update(0.0, False, False, DT, now)
+            if g.lives < lives_before:
+                deaths += 1
+            if g.state == "dead":
+                now = g.state_until
+                g.update(0.0, False, False, DT, now)
+            elif g.state in ("won", "complete"):
+                return {"outcome": "won", "t": now - t0, "deaths": deaths,
+                        "score": g.score, "x": g.hero.x}
+            elif g.state == "gameover":
+                return {"outcome": "gameover", "t": now - t0, "deaths": deaths,
+                        "x": g.hero.x}
+            continue
         if g.state == "play" and (h.grounded or water):
             probe = h.x + h.W + lookahead
             hole = not footing_below(g.level, probe, h.y)
@@ -78,6 +103,36 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
             # podoboos and firebars, which made the bot commit early jumps straight
             # into lava and broke four levels that had been passing.
             spiky = [e for e in ahead if e.kind == "spiny"]
+            # Bowser's fire flies flat at body height, so waiting for it just means
+            # being hit standing still. It is jumped, like everything else he does.
+            if any(hm.alive and hm.flat and 0 < hm.x - h.x < 4 * P.TILE
+                   for hm in g.hammers):
+                h.request_jump(strength, now)
+            # Bowser cannot be stomped and takes five fireballs. Charging him is
+            # just running into a wall that hits back: hold at range and shoot.
+            # Not from `ahead`: he hops, so half the time he is outside the vertical
+            # window that filters ordinary walkers, and the standoff never fired.
+            boss = [e for e in g.enemies
+                    if e.alive and e.dying <= 0 and e.armoured
+                    and 0 < e.x - h.x < 6 * P.TILE]
+            if boss:
+                lives_before = g.lives
+                g.throw(now)
+                # Still have to dodge while shooting: standing still at range is how
+                # the bot got torched by the fire it was supposed to be jumping.
+                if any(hm.alive and hm.flat and -0.5 * P.TILE < hm.x - h.x < 5 * P.TILE
+                       for hm in g.hammers):
+                    h.request_jump(strength, now)
+                g.update(0.0, False, False, DT, now)
+                if g.lives < lives_before:
+                    deaths += 1
+                if g.state == "dead":
+                    now = g.state_until
+                    g.update(0.0, False, False, DT, now)
+                elif g.state == "gameover":
+                    return {"outcome": "gameover", "t": now - t0,
+                            "deaths": deaths, "x": g.hero.x}
+                continue
             close = [e for e in ahead if e.x - h.x < (150 if spiky else 80)]
             # About to step off a RAISED ledge: jump instead of walking off. A fall
             # from a shelf carries you four tiles at running speed, which is how the
@@ -105,8 +160,22 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
                          and (e.vy != 0.0 or e.timer - now < 1.0)
                          for e in g.enemies)
             # A thrown hammer is dodged the same way: let it land, then move.
-            hazard = hazard or any(hm.alive and -1.5 * P.TILE < hm.x - h.x < 5 * P.TILE
+            hazard = hazard or any(hm.alive and not hm.flat
+                                   and -1.5 * P.TILE < hm.x - h.x < 5 * P.TILE
                                    for hm in g.hammers)
+            # A firebar is a timed hazard too: it sweeps a circle, so wait until the
+            # arc is not across the way ahead rather than walking into a spoke.
+            front = h.x + h.W + 8
+            for e in g.enemies:
+                if e.kind != "firebar":
+                    continue
+                for px, py in e.firebar_points():
+                    if abs(px - front) < 1.6 * P.TILE and \
+                            h.y - h.height - 12 < py < h.y + 12:
+                        hazard = True
+                        break
+                if hazard:
+                    break
             if hazard and not water:
                 before_wait = g.lives
                 g.update(0.0, False, False, DT, now)

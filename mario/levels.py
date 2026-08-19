@@ -1347,6 +1347,135 @@ def w7_4():
     return b.build()
 
 
+# ===========================================================================
+# WORLD 8 -- the finale. The longest overworlds in the game, a hammer bro gauntlet,
+# and a castle that ends with Bowser.
+# ===========================================================================
+def w8_1():
+    """The long one. Cannons, buzzy beetles and wide open ground to cross."""
+    b = Builder(160, THEME_OVERWORLD, "8-1")
+    b.floor()
+    for a in (26, 46, 66, 86, 108, 130):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.enemy(11, "buzzy")
+    b.enemy(12, "goomba")
+    b.run(FLOOR - 4, 8, "BB?BB")
+    b.cannon(18, height=2)
+    b.enemy(36, "koopa")
+    b.run(FLOOR - 5, 32, "BMB")
+    b.cannon(40, height=3)
+    b.enemy(56, "buzzy")
+    b.platform(FLOOR - 5, 54, 6)
+    b.cannon(60, height=2)
+    b.enemy(76, "koopa")
+    b.run(FLOOR - 4, 72, "?B?")
+    b.cannon(80, height=3)
+    b.enemy(98, "buzzy")
+    b.stairs(94, 3)
+    b.run(FLOOR - 5, 98, "BB?BB")
+    b.cannon(120, height=2)
+    b.enemy(124, "koopa")
+    b.enemy(140, "buzzy")
+    b.run(FLOOR - 4, 136, "BMB")
+    b.stairs(146, 4)
+    b.flag(152)
+    return b.build()
+
+
+def w8_2():
+    """Cannon alley, with hammer bros on brick towers at the end."""
+    b = Builder(150, THEME_OVERWORLD, "8-2")
+    b.floor()
+    for a in (30, 52, 74, 98, 120):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.enemy(12, "koopa")
+    b.run(FLOOR - 4, 8, "BB?BB")
+    b.cannon(20, height=2)
+    b.cannon(24, height=3)
+    b.enemy(42, "buzzy")
+    b.run(FLOOR - 5, 38, "BMB")
+    b.cannon(46, height=2)
+    b.platform(FLOOR - 5, 60, 6)
+    b.coins(FLOOR - 6, 60, 6)
+    b.enemy(66, "koopa")
+    b.cannon(68, height=3)
+    b.enemy(86, "buzzy")
+    b.run(FLOOR - 4, 82, "?B?")
+    b.cannon(90, height=2)
+    b.enemy(110, "koopa")
+    b.stairs(106, 3)
+    b.cannon(114, height=3)
+    b.platform(FLOOR - 4, 126, 5, kind=BRICK)
+    b.flyer(128, FLOOR - 5, "hammer")
+    b.platform(FLOOR - 6, 132, 3, kind=BRICK)
+    b.flyer(133, FLOOR - 7, "hammer")
+    b.flag(141)
+    return b.build()
+
+
+def w8_3():
+    """The hammer bro gauntlet: four pairs on brick towers, one after another."""
+    b = Builder(140, THEME_OVERWORLD, "8-3")
+    b.floor()
+    b.start(3)
+    b.enemy(12, "koopa")
+    b.run(FLOOR - 4, 8, "BB?BB")
+    # Three pairs, not four, and spaced further apart. With eight bros there was
+    # nearly always a hammer in flight somewhere in the cluster, and a walking
+    # player could never find a gap to move into.
+    # Two pairs. Three kept a hammer in the air almost continuously, and a walking
+    # player never found a gap to advance into -- every other level in the game is
+    # completable at walking pace and this one should be too.
+    for i, col in enumerate((30, 78)):        # towers overhead, not underfoot
+        # Each bro stands at the FAR end of its tower. At the near end it occupies
+        # the very spot a player climbing the side arrives at, and arriving from
+        # below means rising into it -- which is a hit, not a stomp.
+        b.platform(FLOOR - 4, col, 5, kind=BRICK)
+        b.flyer(col + 2, FLOOR - 5, "hammer")
+        b.platform(FLOOR - 6, col + 6, 3, kind=BRICK)
+        b.flyer(col + 7, FLOOR - 7, "hammer")
+    b.enemy(54, "buzzy")
+    b.enemy(102, "koopa")
+    b.cannon(120, height=2)
+    b.enemy(124, "koopa")
+    b.stairs(128, 4)
+    b.flag(134)
+    return b.build()
+
+
+def w8_4():
+    """The last castle. A maze of forks over lava, and Bowser at the end -- five
+    fireballs, or slip past him to the axe."""
+    b = Builder(140, THEME_CASTLE, "8-4")
+    b.floor()
+    b.start(3)
+    for a in (16, 32, 76, 94):
+        b.lava(a, a + 1)
+    b.run(FLOOR - 4, 8, "XXX")
+    b.firebar(12, FLOOR - 5, length=4)
+    b.podoboo(17)
+    b.enemy(26)
+    b.firebar(28, FLOOR - 6, length=5)
+    b.podoboo(33)
+    b.platform(FLOOR - 3, 40, 15, kind=STONE)
+    b.coins(FLOOR - 4, 40, 15)
+    b.loop(52, 36, FLOOR - 3)
+    b.firebar(60, FLOOR - 5, length=4)
+    b.enemy(66)
+    b.podoboo(77)
+    b.firebar(82, FLOOR - 6, length=5)
+    b.platform(FLOOR - 3, 100, 14, kind=STONE)
+    b.coins(FLOOR - 4, 100, 14)
+    b.loop(110, 98, FLOOR - 3)
+    b.podoboo(95)
+    b.firebar(118, FLOOR - 5, length=4)
+    b.bowser(128)
+    b.axe(135)
+    return b.build()
+
+
 WORLDS = [
     [w1_1, w1_2, w1_3, w1_4],
     [w2_1, w2_2, w2_3, w2_4],
@@ -1355,6 +1484,7 @@ WORLDS = [
     [w5_1, w5_2, w5_3, w5_4],
     [w6_1, w6_2, w6_3, w6_4],
     [w7_1, w7_2, w7_3, w7_4],
+    [w8_1, w8_2, w8_3, w8_4],
 ]
 BONUS = {"1-1": w1_1_bonus, "2-1": w2_1_bonus, "3-2": w3_2_bonus,
          "4-2": w4_2_sky, "5-2": w5_2_bonus, "6-2": w6_2_sky}

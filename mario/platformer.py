@@ -114,6 +114,14 @@ BULLET_RANGE = 22 * TILE          # px in front of the cannon it bothers to fire
 BULLET_LIFE = 6.0                 # s before a bullet gives up
 LAKITU_INTERVAL = 3.4             # s between spinies dropped
 SPINY_LEAD = 3.5 * TILE           # px ahead of the player a spiny is thrown
+BOWSER_HP = 5                     # fireballs to finish him
+BOWSER_HOP = -9.5                 # he hops rather than walks
+BOWSER_HOP_EVERY = 2.2            # s
+BOWSER_BREATH_EVERY = 2.7         # s
+BREATH_SPEED = 5.2                # px/frame; his fire flies flat and does not drop
+BREATH_LIFE = 0.85                # short range on purpose: at 2.2s his fire flew
+                                  # 17 tiles and hit players who could not yet see
+                                  # him, which is not a fight, just an ambush
 FIREBAR_RATE = 1.15               # radians/second
 FIREBAR_SEG = 22                  # px between fire segments
 
@@ -366,11 +374,13 @@ class Fireball:
 
 
 class Hammer:
+    """A thrown hammer, or -- flat=True -- a jet of Bowser's fire."""
     R = 9
 
-    def __init__(self, x, y, vx, born):
+    def __init__(self, x, y, vx, born, flat=False):
         self.x, self.y = float(x), float(y)
-        self.vx, self.vy = vx, HAMMER_VY
+        self.flat = flat
+        self.vx, self.vy = vx, 0.0 if flat else HAMMER_VY
         self.born = born
         self.alive = True
         self.spin = 0.0
@@ -380,10 +390,11 @@ class Hammer:
                            self.R * 2, self.R * 2)
 
     def update(self, level, now):
-        if now - self.born > HAMMER_LIFE:
+        if now - self.born > (BREATH_LIFE if self.flat else HAMMER_LIFE):
             self.alive = False
             return
-        self.vy = min(self.vy + GRAVITY, MAX_FALL)
+        if not self.flat:
+            self.vy = min(self.vy + GRAVITY, MAX_FALL)
         self.x += self.vx
         self.y += self.vy
         self.spin += 0.5
@@ -453,11 +464,13 @@ class Enemy:
         self.shell = False
         self.throw_now = False
         self.target_x = float(x)
+        self.hp = BOWSER_HP if kind == "bowser" else 1
         self.vy = 0.0
         # A podoboo at rest sits BELOW the lava surface. Resting it at floor level
         # left a permanent hazard parked on the lip of the pit you have to land on.
         self.home_y = float(y) + (TILE if kind == "podoboo" else 0)
         self.timer = now + (x % 17) * 0.11        # stagger, without randomness
+        self.breath_at = self.timer + 1.1        # offset, so hop and breath differ
         speed = {"goomba": ENEMY_SPEED, "koopa": KOOPA_SPEED,
                  "buzzy": ENEMY_SPEED, "cheep": CHEEP_SPEED,
                  "spiny": ENEMY_SPEED * 1.2}.get(kind, 0.0)
@@ -475,13 +488,18 @@ class Enemy:
         # A spiny has spikes on its back: fire is the only way past it, which is the
         # mirror image of the buzzy beetle shrugging off fire.
         return self.kind in ("goomba", "koopa", "cheep", "buzzy", "para", "hammer",
-                             "bullet")
+                             "bullet")   # not spiny (spikes), not bowser (armoured)
 
     @property
     def fireproof(self):
         """Buzzy beetles shrug off fireballs -- that is the whole point of them."""
         return self.kind in ("buzzy", "podoboo", "firebar", "lift_v", "lift_h",
                              "cannon", "lakitu")
+
+    @property
+    def armoured(self):
+        """Bowser takes several fireballs, and cannot be stomped at all."""
+        return self.kind == "bowser"
 
     @property
     def is_platform(self):
@@ -569,6 +587,19 @@ class Enemy:
                     not level.solid_at(ahead, self.y + 4):
                 self.vx = -self.vx
                 self.x += self.vx * 2
+            return
+
+        if self.kind == "bowser":
+            self.vy = min(self.vy + GRAVITY, MAX_FALL)
+            self.y += self.vy
+            if self.y >= self.home_y:
+                self.y, self.vy = self.home_y, 0.0
+                if now >= self.timer:
+                    self.timer = now + BOWSER_HOP_EVERY
+                    self.vy = BOWSER_HOP
+            if now >= self.breath_at:
+                self.breath_at = now + BOWSER_BREATH_EVERY
+                self.throw_now = True
             return
 
         if self.kind == "lakitu":
@@ -1267,14 +1298,22 @@ class Game:
                 direction = -1 if self.hero.x < e.x else 1
                 self.hammers.append(Hammer(e.x + 16, e.y - 30,
                                            HAMMER_VX * direction, now))
+            elif e.kind == "bowser":
+                direction = -1 if self.hero.x < e.x else 1
+                # Leg height, so a jump clears it. Spawned at head height, the only
+                # "dodge" available was to duck -- and jumping, the obvious reflex
+                # and the one the original teaches, moved you INTO it.
+                self.hammers.append(Hammer(e.x + 16 * direction, e.y - 18,
+                                           BREATH_SPEED * direction, now,
+                                           flat=True))
             elif e.kind == "cannon":
                 # Only fire when the player is in front of it and near enough to
                 # see the shot coming; a cannon firing off-screen is just noise.
                 ahead = (self.hero.x - e.x) * e.face
                 if -BULLET_RANGE < ahead < 0 or (e.face < 0 and
                                                  0 < e.x - self.hero.x < BULLET_RANGE):
-                    bullet = Enemy(e.x + (20 if e.face > 0 else -20), e.y + 26,
-                                   "bullet", now)
+                    bullet = Enemy(e.x + (20 if e.face > 0 else -20),
+                                   LV.FLOOR * TILE - 8, "bullet", now)
                     bullet.vx = BULLET_SPEED * e.face
                     bullet.home_y = now          # bullets use home_y as a birth stamp
                     spawned.append(bullet)
@@ -1315,6 +1354,13 @@ class Game:
                     f.alive = False
                     if e.fireproof:
                         continue          # buzzy beetles are made for this
+                    if e.armoured:
+                        e.hp -= 1
+                        if e.hp > 0:
+                            self._toast(f"BOWSER: {e.hp} more!", now, 0.9)
+                            continue
+                        self.score += 5000
+                        self._toast("BOWSER DOWN!", now, 2.0)
                     e.dying = 0.25
                     self.score += 100
                     self._toast("+100", now, 0.7)
@@ -1655,6 +1701,26 @@ class Game:
                 continue
             if e.kind == "cannon":
                 continue                        # drawn as a tile, not a sprite
+            if e.kind == "bowser":
+                bx, by = int(e.x - ox), int(e.y + HUD_H)
+                pygame.draw.rect(s, (70, 160, 60), (bx - 6, by - 58, 56, 44))
+                pygame.draw.rect(s, (240, 230, 170), (bx + 4, by - 46, 34, 22))
+                for i in range(4):                       # shell spikes
+                    pygame.draw.polygon(s, (240, 240, 230), [
+                        (bx - 4 + i * 16, by - 58), (bx + 3 + i * 16, by - 70),
+                        (bx + 10 + i * 16, by - 58)])
+                pygame.draw.rect(s, (70, 160, 60), (bx + 30, by - 84, 26, 28))
+                pygame.draw.rect(s, (250, 250, 250), (bx + 36, by - 74, 16, 7))
+                for i in range(2):                       # horns
+                    pygame.draw.polygon(s, (240, 240, 230), [
+                        (bx + 32 + i * 16, by - 84), (bx + 36 + i * 16, by - 96),
+                        (bx + 40 + i * 16, by - 84)])
+                pygame.draw.rect(s, (200, 90, 40), (bx, by - 14, 18, 14))
+                pygame.draw.rect(s, (200, 90, 40), (bx + 30, by - 14, 18, 14))
+                bar = max(0, e.hp) / BOWSER_HP
+                pygame.draw.rect(s, (60, 20, 20), (bx - 6, by - 106, 56, 6))
+                pygame.draw.rect(s, (230, 60, 50), (bx - 6, by - 106, int(56 * bar), 6))
+                continue
             if e.kind == "bullet":
                 bx, by = int(e.x - ox), int(e.y + HUD_H - 16)
                 pygame.draw.ellipse(s, (30, 30, 38), (bx - 14, by - 8, 28, 18))
@@ -1667,6 +1733,10 @@ class Game:
 
         for hm in self.hammers:
             hx, hy = int(hm.x - ox), int(hm.y + HUD_H)
+            if hm.flat:
+                pygame.draw.ellipse(s, C_FIRE_A, (hx - 16, hy - 7, 32, 14))
+                pygame.draw.ellipse(s, C_FIRE_B, (hx - 9, hy - 4, 18, 8))
+                continue
             ang = hm.spin
             pygame.draw.line(s, (150, 110, 60),
                              (hx - int(8 * math.cos(ang)), hy - int(8 * math.sin(ang))),
