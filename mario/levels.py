@@ -309,6 +309,10 @@ class Builder:
         return self
 
     def flag(self, col):
+        if col + 5 >= self.w:
+            self.problems.append(f"flag at {col} leaves no room for the castle in a "
+                                 f"{self.w}-tile level (needs {col + 5})")
+            return self
         self.g[FLOOR - 1][col] = POLE
         for r in range(FLOOR - 6, FLOOR - 1):
             if self.g[r][col] == EMPTY:
@@ -1097,15 +1101,152 @@ def w5_4():
     return b.build()
 
 
+# ===========================================================================
+# WORLD 6 -- plateaus and height. The overworlds stack their ground in tiers and
+# 6-3 is the high athletic level, all platform-to-platform.
+# ===========================================================================
+def w6_1():
+    """Overworld built in tiers: stone plateaus you climb rather than run past."""
+    b = Builder(126, THEME_OVERWORLD, "6-1")
+    b.floor()
+    for a in (28, 50, 74, 98):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.enemy(10, "buzzy")
+    b.stairs(14, 3)
+    b.run(FLOOR - 5, 18, "BB?BB")
+    b.enemy(38, "koopa")
+    b.stairs(34, 3, descend=True)
+    b.platform(FLOOR - 3, 40, 6, kind=STONE)
+    b.coins(FLOOR - 4, 40, 6)
+    b.cannon(60, height=2)
+    b.enemy(64, "buzzy")
+    b.stairs(66, 3)
+    b.run(FLOOR - 5, 62, "BMB")
+    b.enemy(86, "koopa")
+    b.platform(FLOOR - 3, 84, 6, kind=STONE)
+    b.coins(FLOOR - 4, 84, 6)
+    b.cannon(92, height=3)
+    b.enemy(110, "buzzy")
+    b.run(FLOOR - 4, 106, "?B?")
+    b.stairs(114, 4)
+    b.flag(120)
+    return b.build()
+
+
+def w6_2():
+    """Overworld, long and pipe-heavy, with a beanstalk hidden mid-level."""
+    b = Builder(134, THEME_OVERWORLD, "6-2")
+    b.floor()
+    for a in (30, 54, 78, 104):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.enemy(11, "goomba")
+    b.enemy(12, "koopa")
+    b.run(FLOOR - 4, 8, "BB?BB")
+    b.pipe(18, height=2)
+    b.vine(24, "sky")
+    b.enemy(42, "koopa")
+    b.run(FLOOR - 4, 38, "BMB")
+    b.pipe(46, height=3)
+    b.enemy(64, "buzzy")
+    b.platform(FLOOR - 5, 62, 6)
+    b.run(FLOOR - 8, 66, "?B?")
+    b.pipe(70, height=2)
+    b.enemy(88, "koopa")
+    b.enemy(89, "goomba")
+    b.run(FLOOR - 4, 84, "BB?BB")
+    b.pipe(94, height=3)
+    b.cannon(98, height=2)
+    b.enemy(114, "buzzy")
+    b.run(FLOOR - 5, 110, "BBB")
+    b.coins(FLOOR - 6, 110, 3)
+    b.pipe(120, height=2)
+    b.stairs(122, 4)
+    b.flag(128)
+    return b.build()
+
+
+def w6_2_sky():
+    """Coin heaven above 6-2."""
+    b = Builder(30, THEME_NIGHT, "6-2 sky")
+    b.floor()
+    b.start(2)
+    for row in (FLOOR - 3, FLOOR - 5, FLOOR - 7):
+        b.coins(row, 4, 20)
+    b.run(FLOOR - 5, 12, "BMB")
+    b.exit_pipe(27, 30)
+    return b.build()
+
+
+def w6_3():
+    """The high athletic level: everything happens on platforms, with paratroopas
+    patrolling the gaps between them."""
+    b = Builder(126, THEME_NIGHT, "6-3")
+    b.floor()
+    for a in (18, 34, 50, 66, 82, 98):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.mushroom_platform(FLOOR - 3, 8, 5)
+    b.flyer(13, FLOOR - 5, "para")
+    b.mushroom_platform(FLOOR - 5, 24, 5)
+    b.flyer(29, FLOOR - 7, "para")
+    b.mushroom_platform(FLOOR - 3, 40, 5)
+    b.enemy(46, "koopa")
+    b.mushroom_platform(FLOOR - 5, 56, 5)
+    b.flyer(61, FLOOR - 7, "para")
+    b.mushroom_platform(FLOOR - 3, 72, 5)
+    b.run(FLOOR - 5, 74, "BMB")
+    b.mushroom_platform(FLOOR - 5, 88, 5)
+    b.flyer(93, FLOOR - 7, "para")
+    b.mushroom_platform(FLOOR - 3, 104, 5)
+    b.enemy(110, "koopa")
+    b.stairs(112, 3)
+    b.flag(118)
+    return b.build()
+
+
+def w6_4():
+    """Castle: firebars over lava, and lifts to carry you between the shelves."""
+    b = Builder(120, THEME_CASTLE, "6-4")
+    b.floor()
+    b.start(3)
+    for a in (18, 34, 52, 70, 88):
+        b.lava(a, a + 1)
+    b.run(FLOOR - 4, 10, "XXX")
+    b.firebar(14, FLOOR - 5, length=4)
+    b.podoboo(19)
+    b.lift(24, FLOOR - 6, "lift_v", span=3, width=3)
+    b.enemy(28)
+    b.firebar(30, FLOOR - 6, length=5)
+    b.podoboo(35)
+    b.platform(FLOOR - 4, 40, 4, kind=STONE)
+    b.firebar(46, FLOOR - 5, length=4)
+    b.podoboo(53)
+    b.lift(58, FLOOR - 5, "lift_h", span=4, width=3)
+    b.enemy(62)
+    b.firebar(64, FLOOR - 6, length=5)
+    b.podoboo(71)
+    b.platform(FLOOR - 4, 76, 4, kind=STONE)
+    b.firebar(82, FLOOR - 5, length=4)
+    b.podoboo(89)
+    b.enemy(98)
+    b.firebar(100, FLOOR - 6, length=4)
+    b.stairs(108, 3)
+    b.axe(115)
+    return b.build()
+
+
 WORLDS = [
     [w1_1, w1_2, w1_3, w1_4],
     [w2_1, w2_2, w2_3, w2_4],
     [w3_1, w3_2, w3_3, w3_4],
     [w4_1, w4_2, w4_3, w4_4],
     [w5_1, w5_2, w5_3, w5_4],
+    [w6_1, w6_2, w6_3, w6_4],
 ]
 BONUS = {"1-1": w1_1_bonus, "2-1": w2_1_bonus, "3-2": w3_2_bonus,
-         "4-2": w4_2_sky, "5-2": w5_2_bonus}
+         "4-2": w4_2_sky, "5-2": w5_2_bonus, "6-2": w6_2_sky}
 
 
 def load(world, level):
