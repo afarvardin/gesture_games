@@ -1,4 +1,4 @@
-"""Headless playability tests for all sixteen levels.
+"""Headless playability tests for every level in every world.
 
 No camera, no display: SDL runs on the dummy driver and the game is driven by a
 bot. The point is to prove every level is completable at the *weakest* jump the
@@ -19,7 +19,7 @@ def check(name, cond, extra=""):
         FAIL.append(name)
 
 DT = 1.0 / P.FPS
-ALL = [(w, l) for w in (1, 2, 3, 4) for l in (1, 2, 3, 4)]
+ALL = [(w, l) for w in range(1, len(LV.WORLDS) + 1) for l in (1, 2, 3, 4)]
 
 
 def new_game(world=1, level=1):
@@ -48,18 +48,25 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
     g.hero.last_ground_t = now
     airtime = 2 * (P.JUMP_MIN + (P.JUMP_MAX - P.JUMP_MIN) * strength) / P.GRAVITY
     deaths = 0
+    # Once a jump is committed at walking speed it has to STAY at walking speed.
+    # Choosing walk for the take-off and then reverting to run on the airborne
+    # frames overshoots the landing by three tiles, straight into the pit the slow
+    # jump was chosen to avoid.
+    commit_walk = False
     for _ in range(int(max_seconds * P.FPS)):
         now += DT
         h = g.hero
-        want_run = run_flag
+        if h.grounded:
+            commit_walk = False
+        want_run = run_flag and not commit_walk
         water = g.in_water()
         if g.state == "play" and (h.grounded or water):
             probe = h.x + h.W + lookahead
             hole = not footing_below(g.level, probe, h.y)
             wall = g.level.solid_at(h.x + h.W + 2, h.y - h.height * 0.5)
             ahead = [e for e in g.enemies
-                     if e.alive and e.dying <= 0 and 0 < e.x - h.x < 220
-                     and abs(e.y - h.y) < 70]
+                     if e.alive and e.dying <= 0 and not e.harmless
+                     and 0 < e.x - h.x < 220 and abs(e.y - h.y) < 70]
             if ahead:
                 h.facing = 1
                 g.throw(now)
@@ -121,6 +128,7 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
                         if footing_below(g.level, h.x + airtime * speed, h.y)]
                 if safe:
                     want_run = (run_flag and True in safe) or (safe == [True])
+                    commit_walk = not want_run
                     h.request_jump(strength, now)
                 elif close:
                     want_run = False
@@ -140,7 +148,7 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
     return {"outcome": "timeout", "t": now - t0, "deaths": deaths, "x": g.hero.x}
 
 
-print("\n[1] all sixteen levels build and validate")
+print(f"\n[1] all {len(ALL)} levels build and validate")
 for w, l in ALL:
     try:
         data = LV.load(w, l)
@@ -209,6 +217,8 @@ night = [f"{w}-{l}" for w, l in ALL if LV.load(w, l)["theme"] == LV.THEME_NIGHT]
 check("World 3 is after dark", len(night) >= 3, str(night))
 
 print("\n[4] a bot completes every level on the WEAKEST flick")
+# Bullet Bills are dodged by jumping, so the bot has to treat one like a wall it
+# cannot fight: fire does not stop them.
 for w, l in ALL:
     for run_flag, label in ((False, "walking"), (True, "running")):
         g = new_game(w, l)
@@ -354,8 +364,9 @@ for _ in range(len(ALL)):
     g.next_level(3000.0)
     if g.state == "complete":
         break
-check("sixteen levels in order", seen == ALL, str(seen))
-check("finishing 4-4 completes the game", g.state == "complete", g.state)
+check(f"{len(ALL)} levels in order", seen == ALL, str(seen))
+check("finishing the last level completes the game",
+      g.state == "complete", g.state)
 
 print("\n[11] one frame of every level renders")
 for w, l in ALL:

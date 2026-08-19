@@ -41,11 +41,12 @@ START = "S"
 EXIT = "T"                # pipe mouth that leaves a bonus room
 STALK = "|"               # decorative mushroom-platform stalk, NOT solid --
                           # a solid stalk 8 tiles tall is an unjumpable wall
+CANNON = "c"              # Bullet Bill cannon: solid, and it fires
 VINE = "v"                # beanstalk: touch it to be carried to a sky area
 LOOP = "@"                # 4-4's maze trigger: cross it low and you go back
 
 SOLID = frozenset({GROUND, STONE, BRICK, QCOIN, QMUSH, USED, PIPE, PIPE_IN,
-                   BRIDGE, EXIT})
+                   BRIDGE, EXIT, CANNON})
 DEADLY = frozenset({LAVA})
 
 # Themes drive palette and background; the engine reads these names.
@@ -254,6 +255,30 @@ class Builder:
         """A moving platform. Vertical ones ride up and down, horizontal ones
         shuttle sideways. Recorded as an entity, not a tile, so it can move."""
         self.enemies.append((col, row, f"{kind}:{span}:{width}"))
+        return self
+
+    def cannon(self, col, height=2, face=-1):
+        """A Bullet Bill cannon. Stands on the floor and fires horizontally.
+
+        The barrel is solid, so it doubles as a small step; the bullets are
+        entities, spawned by the engine on the cannon's own clock.
+        """
+        self._assert_clear_of_gaps((col,), "cannon")
+        top = FLOOR - height
+        for r in range(top, FLOOR):
+            self.g[r][col] = CANNON
+        self.no_reach.add((col, top))
+        self.enemies.append((col, top, f"cannon:{face}"))
+        return self
+
+    def lakitu(self, col):
+        """A cloud that shadows the player and drops spinies."""
+        self.enemies.append((col, 3, "lakitu"))
+        return self
+
+    def bowser(self, col):
+        """The final boss: hops, breathes fire, and throws hammers."""
+        self.enemies.append((col, FLOOR - 1, "bowser"))
         return self
 
     def firebar(self, col, row, length=4):
@@ -940,14 +965,147 @@ def w4_4():
     return b.build()
 
 
+# ===========================================================================
+# WORLD 5 -- Bullet Bills arrive. Cannons fire along the ground, so a jump is no
+# longer only about where the floor is.
+# ===========================================================================
+def w5_1():
+    """Overworld. Cannons on plateaus, and hammer bros guarding the flag."""
+    b = Builder(128, THEME_OVERWORLD, "5-1")
+    b.floor()
+    for a in (30, 52, 76, 100):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.enemy(12, "koopa")
+    b.run(FLOOR - 4, 8, "BB?BB")
+    b.cannon(20, height=2)
+    b.enemy(24, "goomba")
+    b.run(FLOOR - 5, 22, "BBB")
+    b.coins(FLOOR - 6, 22, 3)
+    b.cannon(38, height=3)
+    b.enemy(42, "koopa")
+    b.run(FLOOR - 4, 44, "BMB")
+    b.cannon(60, height=2)
+    b.enemy(64, "buzzy")
+    b.platform(FLOOR - 5, 62, 5)
+    b.cannon(84, height=3)
+    b.enemy(88, "koopa")
+    b.run(FLOOR - 4, 90, "?B?")
+    b.platform(FLOOR - 3, 108, 5, kind=BRICK)
+    b.flyer(109, FLOOR - 4, "hammer")
+    b.platform(FLOOR - 5, 114, 4, kind=BRICK)
+    b.flyer(115, FLOOR - 6, "hammer")
+    b.flag(122)
+    return b.build()
+
+
+def w5_2():
+    """Overworld with a pipe down to a coin room and lifts over the gaps."""
+    b = Builder(132, THEME_OVERWORLD, "5-2")
+    b.floor()
+    for a in (26, 48, 70, 92, 114):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.enemy(11, "goomba")
+    b.enemy(12, "koopa")
+    b.run(FLOOR - 4, 8, "BB?BB")
+    b.pipe(18, height=2, enterable=True, dest="bonus")
+    b.cannon(34, height=2)
+    b.run(FLOOR - 5, 36, "BMB")
+    b.lift(40, FLOOR - 5, "lift_h", span=5, width=3)
+    b.coins(FLOOR - 8, 40, 3)
+    b.enemy(58, "koopa")
+    b.platform(FLOOR - 5, 56, 6)
+    b.cannon(64, height=3)
+    b.lift(80, FLOOR - 6, "lift_v", span=4, width=3)
+    b.coins(FLOOR - 9, 80, 3)
+    b.enemy(84, "buzzy")
+    b.run(FLOOR - 4, 100, "BB?BB")
+    b.enemy(106, "koopa")
+    b.cannon(108, height=2)
+    b.stairs(120, 4)
+    b.flag(126)
+    return b.build()
+
+
+def w5_2_bonus():
+    b = Builder(26, THEME_UNDERGROUND, "5-2 bonus")
+    b.floor()
+    b.roof()
+    b.start(2)
+    for row in (FLOOR - 3, FLOOR - 5, FLOOR - 7):
+        b.coins(row, 4, 16)
+    b.run(FLOOR - 5, 20, "BMB")
+    b.exit_pipe(23, 22)
+    return b.build()
+
+
+def w5_3():
+    """Night athletic: mushroom platforms and paratroopas over a gappy floor."""
+    b = Builder(120, THEME_NIGHT, "5-3")
+    b.floor()
+    for a in (20, 38, 56, 74, 92):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.mushroom_platform(FLOOR - 5, 8, 4)
+    b.flyer(14, FLOOR - 6, "para")
+    b.mushroom_platform(FLOOR - 4, 26, 5)
+    b.enemy(32, "koopa")
+    b.flyer(33, FLOOR - 7, "para")
+    b.mushroom_platform(FLOOR - 5, 44, 5)
+    b.flyer(51, FLOOR - 6, "para")
+    b.mushroom_platform(FLOOR - 4, 62, 5)
+    b.run(FLOOR - 4, 65, "BMB")
+    b.mushroom_platform(FLOOR - 5, 80, 5)
+    b.flyer(87, FLOOR - 6, "para")
+    b.mushroom_platform(FLOOR - 4, 98, 4)
+    b.enemy(104, "koopa")
+    b.stairs(108, 3)
+    b.flag(114)
+    return b.build()
+
+
+def w5_4():
+    """Castle: firebars over a long run of lava, podoboos between them."""
+    b = Builder(118, THEME_CASTLE, "5-4")
+    b.floor()
+    b.start(3)
+    for a in (18, 32, 48, 64, 80, 96):
+        b.lava(a, a + 1)
+    b.run(FLOOR - 4, 10, "XXX")
+    b.firebar(14, FLOOR - 5, length=4)
+    b.podoboo(19)
+    b.firebar(28, FLOOR - 6, length=5)
+    b.podoboo(33)
+    b.platform(FLOOR - 4, 38, 4, kind=STONE)
+    b.firebar(44, FLOOR - 5, length=4)
+    b.podoboo(49)
+    b.run(FLOOR - 5, 54, "XXXX")
+    b.enemy(59)
+    b.firebar(60, FLOOR - 6, length=5)
+    b.podoboo(65)
+    b.platform(FLOOR - 4, 70, 4, kind=STONE)
+    b.firebar(76, FLOOR - 5, length=4)
+    b.podoboo(81)
+    b.run(FLOOR - 5, 86, "XXX")
+    b.enemy(91)
+    b.firebar(92, FLOOR - 6, length=4)
+    b.podoboo(97)
+    b.enemy(106)
+    b.stairs(108, 3)
+    b.axe(113)
+    return b.build()
+
+
 WORLDS = [
     [w1_1, w1_2, w1_3, w1_4],
     [w2_1, w2_2, w2_3, w2_4],
     [w3_1, w3_2, w3_3, w3_4],
     [w4_1, w4_2, w4_3, w4_4],
+    [w5_1, w5_2, w5_3, w5_4],
 ]
 BONUS = {"1-1": w1_1_bonus, "2-1": w2_1_bonus, "3-2": w3_2_bonus,
-         "4-2": w4_2_sky}
+         "4-2": w4_2_sky, "5-2": w5_2_bonus}
 
 
 def load(world, level):

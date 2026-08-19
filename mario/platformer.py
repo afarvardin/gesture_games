@@ -108,6 +108,11 @@ HAMMER_INTERVAL = 2.8             # s between thrown hammers. 1.9 gave a walking
                                   # player no window to pass underneath at all.
 HAMMER_VX, HAMMER_VY = 4.6, -8.0
 HAMMER_LIFE = 3.0
+BULLET_SPEED = 3.4                # px/frame a Bullet Bill travels
+BULLET_INTERVAL = 3.1             # s between shots from one cannon
+BULLET_RANGE = 22 * TILE          # px in front of the cannon it bothers to fire
+BULLET_LIFE = 6.0                 # s before a bullet gives up
+LAKITU_INTERVAL = 3.4             # s between spinies dropped
 FIREBAR_RATE = 1.15               # radians/second
 FIREBAR_SEG = 22                  # px between fire segments
 
@@ -274,6 +279,26 @@ HAMMER_BRO_PIXELS = [
     "..YYYY..",
     ".FF..FF.",
 ]
+SPINY_PIXELS = [
+    "K.K.K.K.",
+    ".KKKKKK.",
+    "KOOOOOOK",
+    "KOWKWKOK",
+    ".OOOOOO.",
+    "..OOOO..",
+    ".F....F.",
+    "........",
+]
+LAKITU_PIXELS = [
+    "..WWWW..",
+    ".WWWWWW.",
+    "WW.GG.WW",
+    "WWGWKGWW",
+    ".WGGGGW.",
+    "..WWWW..",
+    "...GG...",
+    "..G..G..",
+]
 MUSHROOM_PIXELS = [
     "..MMMM..",
     ".MWWMWM.",
@@ -409,12 +434,14 @@ class Enemy:
     def __init__(self, x, y, kind, now=0.0):
         self.x, self.y = float(x), float(y)
         # Lifts and firebars carry parameters in their kind string.
-        self.span, self.width, self.length = 4, 3, 4
+        self.span, self.width, self.length, self.face = 4, 3, 4, -1
         if ":" in kind:
             parts = kind.split(":")
             kind = parts[0]
             if kind == "firebar":
                 self.length = int(parts[1])
+            elif kind == "cannon":
+                self.face = int(parts[1])
             else:
                 self.span, self.width = int(parts[1]), int(parts[2])
         self.kind = kind
@@ -424,13 +451,15 @@ class Enemy:
         self.dying = 0.0
         self.shell = False
         self.throw_now = False
+        self.target_x = float(x)
         self.vy = 0.0
         # A podoboo at rest sits BELOW the lava surface. Resting it at floor level
         # left a permanent hazard parked on the lip of the pit you have to land on.
         self.home_y = float(y) + (TILE if kind == "podoboo" else 0)
         self.timer = now + (x % 17) * 0.11        # stagger, without randomness
         speed = {"goomba": ENEMY_SPEED, "koopa": KOOPA_SPEED,
-                 "buzzy": ENEMY_SPEED, "cheep": CHEEP_SPEED}.get(kind, 0.0)
+                 "buzzy": ENEMY_SPEED, "cheep": CHEEP_SPEED,
+                 "spiny": ENEMY_SPEED * 1.2}.get(kind, 0.0)
         self.vx = -speed
         self.home_x = float(x)
         self.lift_dir = 1
@@ -442,12 +471,16 @@ class Enemy:
 
     @property
     def stompable(self):
-        return self.kind in ("goomba", "koopa", "cheep", "buzzy", "para", "hammer")
+        # A spiny has spikes on its back: fire is the only way past it, which is the
+        # mirror image of the buzzy beetle shrugging off fire.
+        return self.kind in ("goomba", "koopa", "cheep", "buzzy", "para", "hammer",
+                             "bullet")
 
     @property
     def fireproof(self):
         """Buzzy beetles shrug off fireballs -- that is the whole point of them."""
-        return self.kind in ("buzzy", "podoboo", "firebar", "lift_v", "lift_h")
+        return self.kind in ("buzzy", "podoboo", "firebar", "lift_v", "lift_h",
+                             "cannon", "lakitu")
 
     @property
     def is_platform(self):
@@ -501,6 +534,38 @@ class Enemy:
 
         if self.kind == "firebar":
             self.angle += FIREBAR_RATE * dt
+            return
+
+        if self.kind == "cannon":
+            if now >= self.timer:
+                self.timer = now + BULLET_INTERVAL
+                self.throw_now = True      # the game spawns the bullet
+            return
+
+        if self.kind == "bullet":
+            # Bullet Bills ignore gravity and terrain; they just keep coming.
+            self.x += self.vx
+            if now - self.home_y > BULLET_LIFE or not (-60 <= self.x <= level.pw + 60):
+                self.alive = False
+            return
+
+        if self.kind == "spiny":
+            self.x += self.vx
+            ahead = self.x + (self.W if self.vx > 0 else 0) + math.copysign(2, self.vx)
+            if level.solid_at(ahead, self.y - self.H * 0.5) or \
+                    not level.solid_at(ahead, self.y + 4):
+                self.vx = -self.vx
+                self.x += self.vx * 2
+            return
+
+        if self.kind == "lakitu":
+            # Hovers over the player and lobs spinies down at them.
+            target = self.target_x
+            self.x += clamp((target - self.x) * 0.02, -2.6, 2.6)
+            self.y = self.home_y + math.sin(now * 1.4) * 12
+            if now >= self.timer:
+                self.timer = now + LAKITU_INTERVAL
+                self.throw_now = True
             return
 
         if self.kind == "para":
@@ -780,6 +845,8 @@ class Game:
             "para": build_sprite(PARA_PIXELS, 4),
             "buzzy": build_sprite(BUZZY_PIXELS, 4),
             "hammer": build_sprite(HAMMER_BRO_PIXELS, 4),
+            "spiny": build_sprite(SPINY_PIXELS, 4),
+            "lakitu": build_sprite(LAKITU_PIXELS, 4),
         }
         self.sky_cache = {}
 
@@ -1175,14 +1242,33 @@ class Game:
         for it in self.items:
             it.update(self.level, dt)
         self.items = [it for it in self.items if it.alive]
+        spawned = []
         for e in self.enemies:
+            if e.kind == "lakitu":
+                e.target_x = self.hero.x
             e.update(self.level, dt, now)
-            if getattr(e, "throw_now", False):
-                e.throw_now = False
+            if not getattr(e, "throw_now", False):
+                continue
+            e.throw_now = False
+            if e.kind == "hammer":
                 direction = -1 if self.hero.x < e.x else 1
                 self.hammers.append(Hammer(e.x + 16, e.y - 30,
                                            HAMMER_VX * direction, now))
-        self.enemies = [e for e in self.enemies if e.alive]
+            elif e.kind == "cannon":
+                # Only fire when the player is in front of it and near enough to
+                # see the shot coming; a cannon firing off-screen is just noise.
+                ahead = (self.hero.x - e.x) * e.face
+                if -BULLET_RANGE < ahead < 0 or (e.face < 0 and
+                                                 0 < e.x - self.hero.x < BULLET_RANGE):
+                    bullet = Enemy(e.x + (20 if e.face > 0 else -20), e.y + 26,
+                                   "bullet", now)
+                    bullet.vx = BULLET_SPEED * e.face
+                    bullet.home_y = now          # bullets use home_y as a birth stamp
+                    spawned.append(bullet)
+            elif e.kind == "lakitu":
+                spiny = Enemy(e.x, e.y + TILE, "spiny", now)
+                spawned.append(spiny)
+        self.enemies = [e for e in self.enemies if e.alive] + spawned
         for key in list(self.level.bumps):
             self.level.bumps[key] -= dt
             if self.level.bumps[key] <= 0:
@@ -1492,6 +1578,11 @@ class Game:
                 pygame.draw.rect(s, (170, 80, 50),
                                  (x - 30 + i * 26, y - TILE - 14, 16, 16))
             pygame.draw.rect(s, (30, 20, 20), (x + 6, y + 8, 28, 32))
+        elif ch == LV.CANNON:
+            pygame.draw.rect(s, (40, 40, 50), (x, y, TILE, TILE))
+            pygame.draw.rect(s, (90, 90, 105), (x, y, TILE, TILE), 2)
+            if self.level.tile_at(c, r - 1) != LV.CANNON:
+                pygame.draw.rect(s, (20, 20, 28), (x + 2, y + 10, TILE - 4, 16))
         elif ch == LV.VINE:
             for i in range(6):
                 yy = y - i * 22
@@ -1541,6 +1632,14 @@ class Game:
                 cx, cy = int(e.x - ox), int(e.y + HUD_H - 16)
                 pygame.draw.circle(s, C_LAVA_B, (cx, cy), 13)
                 pygame.draw.circle(s, C_LAVA_A, (cx, cy), 8)
+                continue
+            if e.kind == "cannon":
+                continue                        # drawn as a tile, not a sprite
+            if e.kind == "bullet":
+                bx, by = int(e.x - ox), int(e.y + HUD_H - 16)
+                pygame.draw.ellipse(s, (30, 30, 38), (bx - 14, by - 8, 28, 18))
+                pygame.draw.circle(s, (250, 250, 250), (bx + (6 if e.vx > 0 else -6),
+                                                        by - 2), 3)
                 continue
             key = "shell" if (e.kind in ("koopa", "buzzy") and e.shell) else e.kind
             spr = self.spr.get(key, self.spr["goomba"])
