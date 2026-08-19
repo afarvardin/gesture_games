@@ -26,12 +26,26 @@ case "$GAME" in
         cd "$SCRIPT_DIR/fruit_ninja" || exit 1
         exec "$SCRIPT_DIR/.venv/bin/python3" fruit_ninja.py
         ;;
+    platformer|mario|plat)
+        echo "🍄 Starting the Gesture Platformer..."
+        shift
+        cd "$SCRIPT_DIR/mario" || exit 1
+        exec "$SCRIPT_DIR/.venv/bin/python3" platformer.py "$@"
+        ;;
+    spike|two_hand)
+        echo "🖐️🖐️ Starting the two-hand control spike (latency measurement tool)..."
+        shift                       # pass any remaining flags (e.g. --log) through
+        cd "$SCRIPT_DIR/mario" || exit 1
+        exec "$SCRIPT_DIR/.venv/bin/python3" two_hand_spike.py "$@"
+        ;;
     *)
-        echo "Usage: ./run.sh [pacman | fruit_ninja]"
+        echo "Usage: ./run.sh [pacman | fruit_ninja | platformer | spike]"
         echo ""
         echo "Available games:"
         echo "  ./run.sh pacman       - Start Gesture Pac-Man"
         echo "  ./run.sh fruit_ninja  - Start Gesture Fruit Ninja"
+        echo "  ./run.sh platformer   - Start the Gesture Platformer (two hands)"
+        echo "  ./run.sh spike        - Two-hand control spike (not a game; see mario/README.md)"
         exit 1
         ;;
 esac

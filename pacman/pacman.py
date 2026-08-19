@@ -834,7 +834,7 @@ class PacmanGame:
 
         self.score = 0
         self.high_score = 1000
-        self.lives = 20
+        self.lives = 42
         self.level = 1
 
         self.maze = Maze()
@@ -1012,7 +1012,7 @@ class PacmanGame:
 
     def _restart_game(self):
         self.score = 0
-        self.lives = 20
+        self.lives = 42
         self.level = 1
         self._load_level(self.level)
         self.state = PacmanGame.STATE_COUNTDOWN
