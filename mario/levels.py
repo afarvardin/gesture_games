@@ -1237,6 +1237,116 @@ def w6_4():
     return b.build()
 
 
+# ===========================================================================
+# WORLD 7 -- Lakitu appears, trailing the player and dropping spinies. A spiny is
+# the mirror image of a buzzy beetle: spikes on its back, so fire is the only way
+# past it where the beetle needed a stomp.
+# ===========================================================================
+def w7_1():
+    """Overworld under a Lakitu, with cannons along the way."""
+    b = Builder(128, THEME_OVERWORLD, "7-1")
+    b.floor()
+    for a in (30, 54, 78, 102):
+        b.gap(a, a + 1)
+    b.start(3)
+    b.run(FLOOR - 4, 8, "BB?BB")
+    b.lakitu(34)
+    b.cannon(20, height=2)
+    b.enemy(24, "koopa")
+    b.run(FLOOR - 5, 40, "BMB")
+    b.enemy(44, "koopa")
+    b.cannon(48, height=3)
+    b.platform(FLOOR - 5, 62, 6)
+    b.coins(FLOOR - 6, 62, 6)
+    b.enemy(68, "koopa")
+    b.cannon(72, height=2)
+    b.lakitu(86)
+    b.run(FLOOR - 4, 88, "?B?")
+    b.enemy(92, "goomba")
+    b.cannon(96, height=2)
+    b.run(FLOOR - 5, 110, "BBB")
+    b.coins(FLOOR - 6, 110, 3)
+    b.stairs(114, 4)
+    b.flag(120)
+    return b.build()
+
+
+def w7_2():
+    """Underwater again, busier than 2-2: cheep-cheeps at every depth."""
+    b = Builder(124, THEME_WATER, "7-2")
+    b.floor()
+    b.roof(rows=1)
+    b.water(top=1)
+    b.start(3)
+    for col, row in ((12, 4), (20, 8), (30, 3), (38, 7), (48, 5), (56, 9),
+                     (66, 4), (74, 8), (84, 5), (92, 3), (102, 7), (110, 5)):
+        b.swimmer(col, row)
+    b.platform(FLOOR - 3, 16, 4, kind=STONE, coins_above=False)
+    b.coins(FLOOR - 4, 16, 4)
+    b.platform(FLOOR - 5, 34, 5, kind=STONE, coins_above=False)
+    b.coins(FLOOR - 6, 34, 5)
+    b.platform(FLOOR - 3, 54, 4, kind=STONE, coins_above=False)
+    b.coins(FLOOR - 4, 54, 4)
+    b.platform(FLOOR - 5, 72, 5, kind=STONE, coins_above=False)
+    b.coins(FLOOR - 6, 72, 5)
+    b.platform(FLOOR - 3, 92, 4, kind=STONE, coins_above=False)
+    b.coins(FLOOR - 4, 92, 4)
+    b.pipe(114, height=3)
+    b.axe(120)
+    return b.build()
+
+
+def w7_3():
+    """Bridges over water, with more cheep-cheeps leaping through than 2-3."""
+    b = Builder(124, THEME_WATER, "7-3")
+    b.bridge(FLOOR, 0, 123)
+    b.water(top=FLOOR + 1)
+    b.start(3)
+    for col in (12, 22, 32, 44, 54, 66, 76, 88, 98, 110):
+        b.swimmer(col, ROWS - 1, kind="leaper")
+    b.run(FLOOR - 5, 16, "BB?BB")
+    b.coins(FLOOR - 6, 16, 5)
+    b.run(FLOOR - 5, 38, "BMB")
+    b.platform(FLOOR - 5, 58, 5)
+    b.run(FLOOR - 5, 80, "BB?BB")
+    b.coins(FLOOR - 6, 80, 5)
+    b.platform(FLOOR - 5, 100, 5)
+    b.flag(116)
+    return b.build()
+
+
+def w7_4():
+    """A maze castle with two forks: take either low road and it sends you back."""
+    b = Builder(126, THEME_CASTLE, "7-4")
+    b.floor()
+    b.start(3)
+    for a in (16, 32, 74, 92):
+        b.lava(a, a + 1)
+    b.run(FLOOR - 4, 8, "XXX")
+    b.firebar(12, FLOOR - 5, length=4)
+    b.podoboo(17)
+    b.enemy(26)
+    b.firebar(28, FLOOR - 6, length=5)
+    b.podoboo(33)
+    # First fork: the high shelf carries you over the trigger at 52.
+    b.platform(FLOOR - 3, 40, 15, kind=STONE)
+    b.coins(FLOOR - 4, 40, 15)
+    b.loop(52, 36, FLOOR - 3)
+    b.firebar(58, FLOOR - 5, length=4)
+    b.enemy(64)
+    # Second fork, further along.
+    b.platform(FLOOR - 3, 98, 14, kind=STONE)
+    b.coins(FLOOR - 4, 98, 14)
+    b.loop(108, 97, FLOOR - 3)
+    b.podoboo(75)
+    b.firebar(80, FLOOR - 6, length=5)
+    b.podoboo(93)
+    b.firebar(112, FLOOR - 5, length=4)
+    b.stairs(116, 3)
+    b.axe(122)
+    return b.build()
+
+
 WORLDS = [
     [w1_1, w1_2, w1_3, w1_4],
     [w2_1, w2_2, w2_3, w2_4],
@@ -1244,6 +1354,7 @@ WORLDS = [
     [w4_1, w4_2, w4_3, w4_4],
     [w5_1, w5_2, w5_3, w5_4],
     [w6_1, w6_2, w6_3, w6_4],
+    [w7_1, w7_2, w7_3, w7_4],
 ]
 BONUS = {"1-1": w1_1_bonus, "2-1": w2_1_bonus, "3-2": w3_2_bonus,
          "4-2": w4_2_sky, "5-2": w5_2_bonus, "6-2": w6_2_sky}

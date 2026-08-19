@@ -113,6 +113,7 @@ BULLET_INTERVAL = 3.1             # s between shots from one cannon
 BULLET_RANGE = 22 * TILE          # px in front of the cannon it bothers to fire
 BULLET_LIFE = 6.0                 # s before a bullet gives up
 LAKITU_INTERVAL = 3.4             # s between spinies dropped
+SPINY_LEAD = 3.5 * TILE           # px ahead of the player a spiny is thrown
 FIREBAR_RATE = 1.15               # radians/second
 FIREBAR_SEG = 22                  # px between fire segments
 
@@ -550,6 +551,18 @@ class Enemy:
             return
 
         if self.kind == "spiny":
+            # Fall to the ground first. Without this a dropped spiny hovered at the
+            # height Lakitu released it, which is exactly where a jumping player's
+            # head goes -- an invisible mine at head height.
+            if not level.solid_at(self.x + self.W * 0.5, self.y + 2):
+                self.vy = min(self.vy + GRAVITY, MAX_FALL)
+                self.y += self.vy
+                if self.y > level.ph + 120:
+                    self.alive = False
+                return
+            if self.vy > 0:
+                self.y = float(int(self.y // TILE) * TILE)   # sit on the tile, not in it
+            self.vy = 0.0
             self.x += self.vx
             ahead = self.x + (self.W if self.vx > 0 else 0) + math.copysign(2, self.vx)
             if level.solid_at(ahead, self.y - self.H * 0.5) or \
@@ -1266,8 +1279,15 @@ class Game:
                     bullet.home_y = now          # bullets use home_y as a birth stamp
                     spawned.append(bullet)
             elif e.kind == "lakitu":
-                spiny = Enemy(e.x, e.y + TILE, "spiny", now)
-                spawned.append(spiny)
+                # Thrown AHEAD of the player, not dropped on their head. A
+                # stomp-proof enemy landing straight down on you cannot be dodged
+                # or answered; landing in front, it is an obstacle you can see and
+                # burn. Two at a time is plenty.
+                live = sum(1 for x in self.enemies
+                           if x.alive and x.kind == "spiny" and x.dying <= 0)
+                if live < 2:
+                    lead = SPINY_LEAD * (1 if self.hero.facing >= 0 else -1)
+                    spawned.append(Enemy(e.x + lead, e.y + TILE, "spiny", now))
         self.enemies = [e for e in self.enemies if e.alive] + spawned
         for key in list(self.level.bumps):
             self.level.bumps[key] -= dt

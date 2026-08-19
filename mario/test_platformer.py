@@ -70,7 +70,15 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
             if ahead:
                 h.facing = 1
                 g.throw(now)
-            close = [e for e in ahead if e.x - h.x < 80]
+            # A stomp-proof enemy (spiny) must be jumped OVER, not onto, so commit
+            # to the jump from further out. A fire-proof one (buzzy) can only be
+            # stomped, so close the distance first. Treating both the same is how
+            # the bot kept landing on spines.
+            # Only actual spinies: "anything not stompable" also caught airborne
+            # podoboos and firebars, which made the bot commit early jumps straight
+            # into lava and broke four levels that had been passing.
+            spiky = [e for e in ahead if e.kind == "spiny"]
+            close = [e for e in ahead if e.x - h.x < (150 if spiky else 80)]
             # About to step off a RAISED ledge: jump instead of walking off. A fall
             # from a shelf carries you four tiles at running speed, which is how the
             # bot kept sailing off a brick row straight into the pit past its end.
