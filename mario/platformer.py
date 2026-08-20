@@ -174,6 +174,13 @@ THEMES = {
     ),
 }
 
+# One colour per role, everywhere: blue is the LEFT hand and moves you, orange is
+# the RIGHT hand and throws fire. The HUD used to colour these by whether the hand
+# was currently tracked, which meant the colours said nothing about which hand did
+# what -- the thing a player actually needs to know at a glance.
+C_ROLE_MOVE = (60, 170, 255)
+C_ROLE_FIRE = (255, 140, 50)
+
 C_PIPE = (26, 168, 74)
 C_PIPE_DARK = (14, 108, 48)
 C_PIPE_MOUTH = (10, 60, 28)
@@ -1665,7 +1672,7 @@ class Game:
             glow = 0.5 + 0.5 * math.sin(now * 3)
             pygame.draw.rect(self.screen, (int(150 + 80 * glow), 60, 50),
                              (x + 2, top, TILE - 4, bottom - top), 3)
-            arrow = self.small.render("^ this way", True, (255, 210, 140))
+            arrow = self.small.render("", True, (255, 210, 140))
             self.screen.blit(arrow, (x - 22, top - 20))
 
     def draw_entities(self, ox, now):
@@ -1783,7 +1790,7 @@ class Game:
         val = snap["analog"] if snap else 0.0
         if abs(val) > 0.001:
             fw = int(abs(val) * w * 0.5)
-            pygame.draw.rect(self.screen, (0, 235, 255),
+            pygame.draw.rect(self.screen, C_ROLE_MOVE,
                              (cx if val > 0 else cx - fw, bar.top + 3, fw, h - 6),
                              border_radius=2)
         pygame.draw.rect(self.screen, (70, 80, 100), bar, 1, border_radius=3)
@@ -1803,14 +1810,24 @@ class Game:
 
         if self.tracker and snap:
             bx = WIDTH - CAM_PREVIEW[0] - 18
-            for i, (role, seen, side) in enumerate(
-                    (("STEER", snap["steer_seen"], snap.get("steer_side")),
-                     ("FIRE", snap["fire_seen"], snap.get("fire_side")))):
-                col = (60, 230, 130) if seen else (255, 70, 90)
-                pygame.draw.circle(self.screen, col, (bx - 100, 20 + i * 22), 6)
-                text = f"{role} {side or '?'}" if seen else role
-                self.screen.blit(self.small.render(text, True, col),
-                                 (bx - 88, 12 + i * 22))
+            roles = (("MOVE", "left", snap["steer_seen"], snap.get("steer_side"),
+                      C_ROLE_MOVE),
+                     ("FIRE", "right", snap["fire_seen"], snap.get("fire_side"),
+                      C_ROLE_FIRE))
+            for i, (label, want, seen, side, col) in enumerate(roles):
+                y = 12 + i * 22
+                # The role's own colour always; dimmed when that hand is not in
+                # frame, so presence reads without the colour changing meaning.
+                shown = col if seen else tuple(c // 3 for c in col)
+                pygame.draw.circle(self.screen, shown, (bx - 104, y + 8), 6)
+                text = f"{label} {want} hand" if seen else f"{label} -- no hand"
+                self.screen.blit(self.small.render(text, True, shown),
+                                 (bx - 92, y))
+                # If detection disagrees with the hand this role is meant to be,
+                # say so plainly and name the fix.
+                if seen and side and side != want:
+                    warn = self.small.render("press H", True, (255, 90, 90))
+                    self.screen.blit(warn, (bx - 92 + 132, y))
             self.draw_steer_bar(snap, bx - 100, 44)
             frame = snap["frame"]
             if frame is not None:

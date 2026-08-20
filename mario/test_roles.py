@@ -184,5 +184,46 @@ for lx, rx in xs:                        # the left hand sweeps right, right swe
 check("roles hold through a crossing", ok,
       "handedness decides the role, prediction does the tracking")
 
+print("\n[L] the left hand ALWAYS moves and the right ALWAYS throws")
+# Whatever order the hands appear in, whichever side of frame they are on, and
+# however they cross over, the roles must end up on the correct physical hands.
+for label, order, xs in (("left first",  ("Left", "Right"), (200.0, 440.0)),
+                         ("right first", ("Right", "Left"), (200.0, 440.0)),
+                         ("crossed over", ("Right", "Left"), (440.0, 200.0)),
+                         ("both far left", ("Left", "Right"), (120.0, 180.0)),
+                         ("both far right", ("Right", "Left"), (500.0, 560.0))):
+    t = Bare()
+    now = 3000.0
+    a = {}
+    for i in range(S.HANDEDNESS_VOTES + 4):
+        now += 1 / 30
+        a = t._assign_roles([hand(px(xs[0]), 0.5), hand(px(xs[1]), 0.5)],
+                            hd(*order), W, H, now)
+    left_x = xs[order.index("Left")]
+    check(f"{label}: MOVE is on the left hand",
+          S.STEER in a and abs(a[S.STEER][S.WRIST].x * W - left_x) < 1.0,
+          f"steer at {a[S.STEER][S.WRIST].x*W:.0f}, left hand at {left_x:.0f}")
+    check(f"{label}: FIRE is on the right hand",
+          S.FIRE in a and abs(a[S.FIRE][S.WRIST].x * W
+                              - xs[order.index("Right")]) < 1.0)
+
+# And a sustained mismatch is corrected quickly, not after half a second.
+t = Bare()
+now = 3500.0
+for i in range(20):
+    now += 1 / 30
+    a = t._assign_roles([hand(px(200.0), 0.5), hand(px(440.0), 0.5)],
+                        hd("Left", "Right"), W, H, now)
+frames = 0
+for i in range(20):
+    now += 1 / 30
+    frames += 1
+    a = t._assign_roles([hand(px(200.0), 0.5), hand(px(440.0), 0.5)],
+                        hd("Right", "Left"), W, H, now)
+    if abs(a[S.STEER][S.WRIST].x * W - 440.0) < 1.0:
+        break
+check("a real mismatch is corrected within ~0.2s", frames <= 7,
+      f"took {frames} frames ({frames/30:.2f}s)")
+
 print("\n" + ("ALL PASS" if not FAIL else f"{len(FAIL)} FAILED: " + ", ".join(FAIL)))
 sys.exit(1 if FAIL else 0)

@@ -225,7 +225,10 @@ ROLE_BY_HANDEDNESS = True   # False falls back to pure position tracking
 SWAP_HANDEDNESS = False     # flip if left/right come out backwards on your camera
 HANDEDNESS_MIN_SCORE = 0.6  # ignore labels the model is not confident about
 HANDEDNESS_VOTES = 12       # frames of history kept per role (~0.4s at 30fps)
-HANDEDNESS_SWAP_VOTES = 8   # agreeing votes needed before a role changes hands
+HANDEDNESS_SWAP_VOTES = 4   # agreeing votes needed before a role changes hands.
+                            # Only reached when a label is missing or unsure -- when
+                            # both hands are clearly labelled the roles are set
+                            # directly, so this no longer needs to be slow.
 
 ROLE_MEMORY = 1.2           # [log] s a role's live track stays valid for matching
                             # was 0.5, and 9 dropouts in one session outlasted it
@@ -700,6 +703,12 @@ class TwoHandTracker:
         assigned = {}        # role -> landmarks
         taken = set()        # point indices already claimed
 
+        # Handedness is authoritative: the left hand moves, the right hand throws.
+        # It is applied through the vote below rather than from the raw label,
+        # because a single flickered frame would otherwise flip the controls
+        # mid-jump -- which is the bug this whole mechanism exists to prevent. With
+        # HANDEDNESS_SWAP_VOTES low, a genuine mismatch is corrected in about an
+        # eighth of a second, while one or two bad frames are still ignored.
         if fresh:
             # Greedy nearest-prediction matching over the pairs that pass the
             # radius check. Match PARTIALLY: a role whose own match is 1px away
@@ -1241,7 +1250,9 @@ class TwoHandTracker:
     # ---------- overlay (drawn on the detector thread) ----------
     def _draw_overlay(self, frame, hands, steer_out, pinch_gap):
         h, w = frame.shape[:2]
-        role_colors = {STEER: (255, 235, 0), FIRE: (40, 120, 255)}   # BGR
+        # BGR: blue for the moving hand, orange for the firing hand, matching the
+        # game's HUD exactly so the two never disagree about what a colour means.
+        role_colors = {STEER: (255, 170, 60), FIRE: (50, 140, 255)}   # BGR
 
         for role, lm in hands.items():
             color = role_colors[role]
@@ -1251,7 +1262,8 @@ class TwoHandTracker:
             for p in pts:
                 cv2.circle(frame, p, 3, (255, 255, 255), -1)
             side = self._role_side.get(role)
-            label = f"{role} ({side} hand)" if side else role
+            verb = "MOVE" if role == STEER else "FIRE"
+            label = f"{verb} ({side} hand)" if side else verb
             cv2.putText(frame, label, (pts[WRIST][0] - 45, pts[WRIST][1] + 32),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
 
