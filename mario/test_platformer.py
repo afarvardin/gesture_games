@@ -188,11 +188,11 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
                     return {"outcome": "gameover", "t": now - t0,
                             "deaths": deaths, "x": g.hero.x}
                 continue
-            # A maze loop has a high road: climb onto the shelf before the trigger
-            # instead of walking into it and being sent back for ever.
-            for col, dest, above_row in getattr(g.level, "loops", []):
+            # A maze fork has a high road: climb onto the shelf rather than walking
+            # into the barrier that blocks the low one.
+            for col, above_row in getattr(g.level, "gates", []):
                 gap_tiles = (col * P.TILE - h.x) / P.TILE
-                if 0 < gap_tiles < 14 and h.y > above_row * P.TILE:
+                if 0 < gap_tiles < 16 and h.y > above_row * P.TILE:
                     h.request_jump(strength, now)
                     break
             if water:
@@ -288,8 +288,8 @@ for kind, label in (("para", "paratroopas"), ("buzzy", "buzzy beetles"),
                     ("podoboo", "podoboos"), ("koopa", "koopas"),
                     ("cheep", "cheep-cheeps"), ("leaper", "leaping cheeps")):
     check(f"the game contains {label}", kind in kinds)
-loops = sum(len(LV.load(w, l).get("loops", [])) for w, l in ALL)
-check("4-4 has a maze loop", loops >= 1, f"{loops} trigger(s)")
+gates = sum(len(LV.load(w, l).get("gates", [])) for w, l in ALL)
+check("the castles have maze forks", gates >= 3, f"{gates} fork(s)")
 night = [f"{w}-{l}" for w, l in ALL if LV.load(w, l)["theme"] == LV.THEME_NIGHT]
 check("World 3 is after dark", len(night) >= 3, str(night))
 
@@ -303,6 +303,36 @@ for w, l in ALL:
         check(f"{w}-{l} completed while {label}", res["outcome"] == "won",
               f"{res['outcome']} at x={res['x']:.0f}/{g.level.pw} "
               f"after {res['t']:.0f}s, deaths={res['deaths']}")
+
+print("\n[4b] maze forks block the low road; nothing rewinds the player")
+# The reported 8-4 bug: an invisible trigger teleported you backwards, and the high
+# road was a shelf you walked UNDERNEATH -- so being sent back just meant walking
+# under it again, for ever. A fork must be a wall you can see, never a rewind.
+forked = [(w, l) for w, l in ALL if LV.load(w, l).get("gates")]
+check("some levels have forks at all", forked, str(forked))
+for w, l in forked:
+    g = new_game(w, l)
+    for col, above_row in g.level.gates:
+        blocked = g.level.solid_at(col * P.TILE + P.TILE / 2,
+                                   (LV.FLOOR - 1) * P.TILE + 4)
+        open_above = not g.level.solid_at(col * P.TILE + P.TILE / 2,
+                                          (above_row - 1) * P.TILE)
+        check(f"{w}-{l}: the low road at col {col} is walled off", blocked)
+        check(f"{w}-{l}: the high road over col {col} is clear", open_above)
+    # And walking right must never yank the hero backwards.
+    g.hero.x = float(g.level.gates[0][0] - 14) * P.TILE
+    g.hero.y = float(LV.FLOOR * P.TILE)
+    g.hero.grounded = True
+    now, worst_back = 5000.0, 0.0
+    for _ in range(14 * P.FPS):
+        now += DT
+        before = g.hero.x
+        g.update(1.0, False, False, DT, now)
+        worst_back = max(worst_back, before - g.hero.x)
+        if g.state != "play":
+            break
+    check(f"{w}-{l}: walking into the fork never rewinds you",
+          worst_back < P.TILE, f"largest backwards jump {worst_back:.0f}px")
 
 print("\n[5] mushrooms, growing and taking a hit")
 g = new_game(1, 1)
@@ -444,6 +474,32 @@ for _ in range(len(ALL)):
 check(f"{len(ALL)} levels in order", seen == ALL, str(seen))
 check("finishing the last level completes the game",
       g.state == "complete", g.state)
+
+print("\n[10b] the ending is a celebration, not a stale line of text")
+g = new_game(1, 1)
+g.state, g.state_until = "complete", 9000.0
+g.score, g.coins_taken, g.lives = 123456, 214, 3
+ok = True
+try:
+    for i in range(180):                  # three seconds, every frame
+        g.draw(None, 9000.0 + i / P.FPS)
+except Exception as exc:
+    import traceback; traceback.print_exc()
+    ok = False
+check("the victory screen animates without erroring", ok)
+src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "platformer.py")).read()
+check("no stale 'both worlds' wording survives", "BOTH WORLDS" not in src.upper())
+check("the ending names the real size of the game",
+      "8 worlds" in src and "32 levels" in src)
+for state in ("won", "gameover", "dead", "play"):
+    g.state = state
+    try:
+        g.draw(None, 9100.0)
+        fine = True
+    except Exception:
+        fine = False
+    check(f"the '{state}' screen still draws", fine)
 
 print("\n[11] one frame of every level renders")
 for w, l in ALL:

@@ -795,7 +795,7 @@ class Level:
         self.end_kind, self.end_col = data["end"]
         self.water_level = data["theme"] == LV.THEME_WATER
         self.ceiling = data["ceiling"]
-        self.loops = list(data.get("loops", []))
+        self.gates = list(data.get("gates", []))
         self.bumps = {}                    # (col,row) -> seconds left of bump
         self.start = (data["start_col"] * TILE, LV.FLOOR * TILE)
 
@@ -910,6 +910,7 @@ class Game:
         self.lives = START_LIVES
         self.score = 0
         self.coins_taken = 0
+        self.run_start = time.perf_counter()
         self.world, self.level_no = world, level
         self.load_level(world, level)
         self.state = "play"
@@ -1213,15 +1214,6 @@ class Game:
                 self._pipe_target = dest
                 return
 
-        # 4-4's maze: crossing the trigger low sends you back to try the top route.
-        for col, dest, above_row in self.level.loops:
-            if abs(h.x - col * TILE) < 12 and h.y > above_row * TILE + TILE * 0.5:
-                h.x = float(dest * TILE)
-                self.cam_x = clamp(h.x - WIDTH * 0.42, 0,
-                                   max(0, self.level.pw - WIDTH))
-                self._toast("wrong way -- try the high road", now, 2.0)
-                break
-
         self.step_world(dt, now)
         if self.state != "play":
             return
@@ -1515,6 +1507,7 @@ class Game:
         ox = int(self.cam_x)
         self.draw_background(th, ox, now)
         self.draw_tiles(th, ox, now)
+        self.draw_loop_gates(ox, now)
         self.draw_entities(ox, now)
         self.draw_hud(snap, now)
         self.draw_overlays(now)
@@ -1660,6 +1653,20 @@ class Game:
             pygame.draw.rect(s, (150, 110, 60), (x + 16, y + 10, 6, 28))
             pygame.draw.polygon(s, (220, 230, 240), [
                 (x + 8, y + 6), (x + 32, y + 12), (x + 8, y + 18)])
+
+    def draw_loop_gates(self, ox, now):
+        """Light up the barrier at a maze fork, so the way on reads at a glance."""
+        for col, above_row in getattr(self.level, "gates", []):
+            x = col * TILE - ox
+            if x < -TILE or x > WIDTH + TILE:
+                continue
+            top = (above_row + 1) * TILE + HUD_H
+            bottom = LV.FLOOR * TILE + HUD_H
+            glow = 0.5 + 0.5 * math.sin(now * 3)
+            pygame.draw.rect(self.screen, (int(150 + 80 * glow), 60, 50),
+                             (x + 2, top, TILE - 4, bottom - top), 3)
+            arrow = self.small.render("^ this way", True, (255, 210, 140))
+            self.screen.blit(arrow, (x - 22, top - 20))
 
     def draw_entities(self, ox, now):
         s = self.screen
@@ -1826,16 +1833,89 @@ class Game:
                                        (frame.shape[1], frame.shape[0]), "RGB")
         return pygame.transform.smoothscale(surf, CAM_PREVIEW)
 
+    def draw_victory(self, now):
+        """The end of the game deserves more than a line of text.
+
+        Sparks, a trophy, a rainbow title and the run's numbers. What was here
+        before named the wrong number of worlds -- left over from when there were
+        only two, and by the end simply untrue.
+        """
+        t = now - self.state_until + 8.0                # seconds since the win
+        veil = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        veil.fill((6, 4, 26, 232))
+        self.screen.blit(veil, (0, 0))
+
+        if not hasattr(self, "_sparks"):
+            self._sparks = [_Spark(i) for i in range(VICTORY_SPARKS)]
+        for sp in self._sparks:
+            sp.draw(self.screen, t)
+
+        cx = WIDTH // 2
+        # Sunburst behind the trophy.
+        for k in range(16):
+            a = t * 0.6 + k * math.pi / 8
+            x2 = cx + math.cos(a) * 300
+            y2 = 250 + math.sin(a) * 300
+            pygame.draw.line(self.screen, (44, 34, 90), (cx, 250), (int(x2), int(y2)), 12)
+
+        # Trophy.
+        bob = int(math.sin(t * 2) * 6)
+        base = 300 + bob
+        pygame.draw.rect(self.screen, (196, 150, 40), (cx - 46, base - 70, 92, 60),
+                         border_radius=10)
+        pygame.draw.rect(self.screen, (250, 214, 90), (cx - 38, base - 64, 76, 46),
+                         border_radius=8)
+        for side in (-1, 1):
+            pygame.draw.arc(self.screen, (196, 150, 40),
+                            (cx + side * 60 - 22, base - 66, 44, 44),
+                            -1.4 if side > 0 else 1.7, 1.7 if side > 0 else 4.5, 7)
+        pygame.draw.rect(self.screen, (196, 150, 40), (cx - 12, base - 12, 24, 22))
+        pygame.draw.rect(self.screen, (150, 110, 26), (cx - 40, base + 8, 80, 16),
+                         border_radius=5)
+        star = 0.6 + 0.4 * math.sin(t * 5)
+        pygame.draw.circle(self.screen, (255, int(240 * star), 160), (cx, base - 42), 10)
+
+        # Title, letter by letter in shifting colours.
+        title = "YOU SAVED THE KINGDOM!"
+        widths = [self.big_font.size(ch)[0] for ch in title]
+        x = cx - sum(widths) // 2
+        for i, ch in enumerate(title):
+            wob = int(math.sin(t * 4 + i * 0.4) * 7)
+            col = (int(180 + 75 * math.sin(t * 2 + i * 0.5)),
+                   int(180 + 75 * math.sin(t * 2 + i * 0.5 + 2.1)),
+                   int(180 + 75 * math.sin(t * 2 + i * 0.5 + 4.2)))
+            self.screen.blit(self.big_font.render(ch, True, col),
+                             (x, 390 + wob))
+            x += widths[i]
+
+        sub = self.font.render("all 8 worlds, 32 levels", True, (200, 210, 240))
+        self.screen.blit(sub, (cx - sub.get_width() // 2, 452))
+
+        elapsed = int(now - self.run_start) if hasattr(self, "run_start") else 0
+        stats = [f"SCORE  {self.score:06d}", f"COINS  {self.coins_taken}",
+                 f"LIVES LEFT  {max(0, self.lives)}",
+                 f"TIME  {elapsed // 60}:{elapsed % 60:02d}"]
+        y = 500
+        for line in stats:
+            surf = self.font.render(line, True, C_COIN)
+            self.screen.blit(surf, (cx - surf.get_width() // 2, y))
+            y += 30
+        hint = self.small.render("R to play again    Esc to quit", True, (170, 180, 210))
+        self.screen.blit(hint, (cx - hint.get_width() // 2, y + 12))
+
     def draw_overlays(self, now):
         if self.toast and now < self.toast_until:
             s = self.font.render(self.toast, True, (255, 255, 255))
             self.screen.blit(s, (WIDTH // 2 - s.get_width() // 2, HUD_H + 20))
         banner = None
         if self.state == "won":
-            nxt = "next level..." if (self.world, self.level_no) != (2, 4) else ""
+            last = (self.world, self.level_no) == (len(LV.WORLDS),
+                                                   len(LV.WORLDS[-1]))
+            nxt = "" if last else "next level..."
             banner = (f"{self.level.name} CLEAR!", nxt or "R to restart")
         elif self.state == "complete":
-            banner = ("BOTH WORLDS CLEAR!", f"final score {self.score}   R to replay")
+            self.draw_victory(now)
+            return
         elif self.state == "gameover":
             banner = ("GAME OVER", "R to try again")
         if banner:
@@ -1848,6 +1928,37 @@ class Game:
             self.screen.blit(t, (box.centerx - t.get_width() // 2, box.y + 28))
             s = self.small.render(banner[1], True, C_TEXT)
             self.screen.blit(s, (box.centerx - s.get_width() // 2, box.y + 96))
+
+
+VICTORY_SPARKS = 90
+
+
+class _Spark:
+    """One drifting spark on the victory screen. Positions are derived from an
+    index rather than random numbers, so the celebration is identical every time
+    and the whole file stays reproducible for tests."""
+
+    def __init__(self, i):
+        self.i = i
+        self.x = (i * 137) % WIDTH
+        self.base_y = (i * 71) % HEIGHT
+        self.speed = 18 + (i % 7) * 9
+        self.size = 2 + (i % 4)
+        self.hue = i % 4
+
+    COLORS = ((255, 226, 120), (255, 255, 255), (255, 170, 90), (170, 230, 255))
+
+    def draw(self, screen, t):
+        y = int((self.base_y - t * self.speed) % (HEIGHT + 40)) - 20
+        # Clamped: 0.45 + 0.55*sin dips just below zero, and a negative colour
+        # component is a hard ValueError out of pygame rather than a dim spark.
+        twinkle = clamp(0.45 + 0.55 * math.sin(t * 3 + self.i), 0.05, 1.0)
+        col = tuple(int(clamp(c * twinkle, 0, 255)) for c in self.COLORS[self.hue])
+        r = max(1, int(self.size * (0.6 + 0.4 * twinkle)))
+        pygame.draw.circle(screen, col, (self.x, y), r)
+        if self.size >= 4:                       # the big ones get a cross-glint
+            pygame.draw.line(screen, col, (self.x - r * 3, y), (self.x + r * 3, y))
+            pygame.draw.line(screen, col, (self.x, y - r * 3), (self.x, y + r * 3))
 
 
 def parse_args(argv):

@@ -98,7 +98,7 @@ class Builder:
         self.water_cols = set()
         self.ceiling = False
         self.problems = []          # collected, so one run reports every mistake
-        self.loops = []             # (trigger col, destination col, must-be-above row)
+        self.gates = []             # (column, row of the high road above it)
         self.no_reach = set()       # blocks exempt from the reachability rule
 
     # ---- terrain ----
@@ -198,6 +198,24 @@ class Builder:
             self.pipe_links[col] = dest
         return self
 
+    def ramp_to(self, col, row, steps=3):
+        """A staircase rising to meet a shelf at `row`, ending at column `col`.
+
+        Without one, a fork's high road is a shelf you walk UNDERNEATH: the only
+        way up is an unsignposted jump taken before you reach it, and missing it
+        drops you into the loop trigger, back to the start of the section, and
+        under the shelf again -- forever. With a ramp the default path leads up,
+        and taking the low road becomes a choice rather than a trap.
+        """
+        height = FLOOR - row
+        for i in range(steps):
+            c = col - steps + i
+            h = int(round(height * (i + 1) / steps))
+            self._assert_clear_of_gaps((c,), "ramp")
+            for r in range(FLOOR - h, FLOOR):
+                self.g[r][c] = STONE
+        return self
+
     def stairs(self, col, height, descend=False):
         """A staircase of stone blocks, as at the end of an overworld level."""
         cols = range(col, col + height)
@@ -294,9 +312,18 @@ class Builder:
         self.pipe_links[col] = dest
         return self
 
-    def loop(self, col, dest_col, above_row):
-        """4-4's maze: crossing this column below `above_row` sends you back."""
-        self.loops.append((col, dest_col, above_row))
+    def gate(self, col, above_row):
+        """Block the low road at a fork with a solid barrier up to the high road.
+
+        This replaces a teleport-you-backwards trigger. That version read as the
+        game resetting at random: the trigger was invisible, and the high road was
+        a shelf you walked underneath, so being sent back just meant walking under
+        it again. A wall you can see is a fork; an invisible rewind is a bug.
+        """
+        for r in range(above_row + 1, FLOOR):
+            self.g[r][col] = STONE
+        self.no_reach.add((col, above_row + 1))
+        self.gates.append((col, above_row))
         return self
 
     def podoboo(self, col):
@@ -424,7 +451,7 @@ class Builder:
             "end": self.end,
             "water": sorted(self.water_cols),
             "ceiling": self.ceiling,
-            "loops": list(self.loops),
+            "gates": list(self.gates),
         }
 
 
@@ -937,8 +964,8 @@ def w4_3():
 
 
 def w4_4():
-    """The maze castle. Take the low road at the fork and it puts you back at the
-    start of the section; the way on is over the top."""
+    """The maze castle. The low road at each fork is walled off; the way on is over
+    the top, up the staircase."""
     b = Builder(120, THEME_CASTLE, "4-4")
     b.floor()
     b.start(3)
@@ -951,10 +978,11 @@ def w4_4():
     b.firebar(28, FLOOR - 6, length=5)
     b.podoboo(33)
     # The fork: the upper shelf carries you past the trigger at 52.
+    b.ramp_to(40, FLOOR - 3)
     b.platform(FLOOR - 3, 40, 15, kind=STONE)
     b.coins(FLOOR - 4, 40, 15)
     b.enemy(58)
-    b.loop(52, 34, FLOOR - 3)
+    b.gate(52, FLOOR - 3)
     b.firebar(58, FLOOR - 5, length=4)
     b.podoboo(63)
     b.run(FLOOR - 4, 70, "XXXX")
@@ -1316,11 +1344,11 @@ def w7_3():
 
 
 def w7_4():
-    """A maze castle with two forks: take either low road and it sends you back."""
+    """A maze castle with two forks: both low roads are walled off."""
     b = Builder(126, THEME_CASTLE, "7-4")
     b.floor()
     b.start(3)
-    for a in (16, 32, 74, 92):
+    for a in (16, 32, 74, 86):
         b.lava(a, a + 1)
     b.run(FLOOR - 4, 8, "XXX")
     b.firebar(12, FLOOR - 5, length=4)
@@ -1329,18 +1357,20 @@ def w7_4():
     b.firebar(28, FLOOR - 6, length=5)
     b.podoboo(33)
     # First fork: the high shelf carries you over the trigger at 52.
+    b.ramp_to(40, FLOOR - 3)
     b.platform(FLOOR - 3, 40, 15, kind=STONE)
     b.coins(FLOOR - 4, 40, 15)
-    b.loop(52, 36, FLOOR - 3)
+    b.gate(52, FLOOR - 3)
     b.firebar(58, FLOOR - 5, length=4)
     b.enemy(64)
     # Second fork, further along.
+    b.ramp_to(98, FLOOR - 3)
     b.platform(FLOOR - 3, 98, 14, kind=STONE)
     b.coins(FLOOR - 4, 98, 14)
-    b.loop(108, 97, FLOOR - 3)
+    b.gate(108, FLOOR - 3)
     b.podoboo(75)
     b.firebar(80, FLOOR - 6, length=5)
-    b.podoboo(93)
+    b.podoboo(87)
     b.firebar(112, FLOOR - 5, length=4)
     b.stairs(116, 3)
     b.axe(122)
@@ -1446,12 +1476,12 @@ def w8_3():
 
 
 def w8_4():
-    """The last castle. A maze of forks over lava, and Bowser at the end -- five
-    fireballs, or slip past him to the axe."""
+    """The last castle. Forks over lava with the low roads walled off, and Bowser at
+    the end -- five fireballs, or slip past him to the axe."""
     b = Builder(140, THEME_CASTLE, "8-4")
     b.floor()
     b.start(3)
-    for a in (16, 32, 76, 94):
+    for a in (16, 32, 76, 88):
         b.lava(a, a + 1)
     b.run(FLOOR - 4, 8, "XXX")
     b.firebar(12, FLOOR - 5, length=4)
@@ -1459,17 +1489,20 @@ def w8_4():
     b.enemy(26)
     b.firebar(28, FLOOR - 6, length=5)
     b.podoboo(33)
+    b.ramp_to(40, FLOOR - 3)
     b.platform(FLOOR - 3, 40, 15, kind=STONE)
     b.coins(FLOOR - 4, 40, 15)
-    b.loop(52, 36, FLOOR - 3)
+    b.gate(52, FLOOR - 3)
     b.firebar(60, FLOOR - 5, length=4)
     b.enemy(66)
     b.podoboo(77)
     b.firebar(82, FLOOR - 6, length=5)
+    b.ramp_to(100, FLOOR - 3)
+
     b.platform(FLOOR - 3, 100, 14, kind=STONE)
     b.coins(FLOOR - 4, 100, 14)
-    b.loop(110, 98, FLOOR - 3)
-    b.podoboo(95)
+    b.gate(110, FLOOR - 3)
+    b.podoboo(89)
     b.firebar(118, FLOOR - 5, length=4)
     b.bowser(128)
     b.axe(135)
