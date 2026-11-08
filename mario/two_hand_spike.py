@@ -40,6 +40,9 @@ Usage:
   --swap-hands flips left/right hand detection for a camera that reports it
   reversed; the H key does the same thing while running.
 
+  --cpu-tracking runs MediaPipe on the CPU. The GPU is the default on macOS
+  (far less CPU, lower latency); this is the way back if it misbehaves.
+
   --log writes one CSV row per pose and per event, so the thresholds can be
   tuned against real motion instead of recollection. Analyse it with
   analyse_log.py.
@@ -67,6 +70,15 @@ import pygame
 WIDTH, HEIGHT = 1280, 720
 FPS = 60
 CAM_W, CAM_H = 640, 480
+
+# Run hand tracking on the GPU where MediaPipe supports it (macOS). It is the
+# biggest cost in the game by far: measured on an M4 Pro with two hands in view,
+# the GPU path takes the tracker from ~59% of a CPU core to ~20%, cuts per-frame
+# inference from 19ms to 11ms, and lands within ~1px of the CPU landmarks. Less
+# CPU is what keeps the laptop cool and the battery going. If creating the GPU
+# detector fails, the tracker falls back to the CPU on its own; --cpu-tracking
+# forces the CPU path.
+USE_GPU = sys.platform == "darwin"
 
 PREVIEW_RECT = pygame.Rect(20, 20, 640, 480)
 PANEL_RECT = pygame.Rect(676, 20, 584, 480)
@@ -402,6 +414,7 @@ class TwoHandTracker:
         self.tracker_frame_times = collections.deque(maxlen=120)
         self.dropped = 0
 
+        self.use_gpu = USE_GPU      # cleared by _make_detector if the GPU fails
         self._open_camera(camera_id)
         self._detector = self._make_detector()
         self._thread = None
@@ -457,17 +470,40 @@ class TwoHandTracker:
             print("[Model] ERROR: hand_landmarker.task not found in", MODEL_CANDIDATES)
             return None
 
-        options = mp.tasks.vision.HandLandmarkerOptions(
-            base_options=mp.tasks.BaseOptions(model_asset_path=model_path),
-            num_hands=2,
-            running_mode=mp.tasks.vision.RunningMode.LIVE_STREAM,
-            result_callback=self._on_result,
-            min_hand_detection_confidence=0.5,
-            min_hand_presence_confidence=0.5,
-            min_tracking_confidence=0.5,
-        )
-        print(f"[Model] {model_path} (LIVE_STREAM, num_hands=2)")
-        return mp.tasks.vision.HandLandmarker.create_from_options(options)
+        def create(delegate):
+            options = mp.tasks.vision.HandLandmarkerOptions(
+                base_options=mp.tasks.BaseOptions(model_asset_path=model_path,
+                                                  delegate=delegate),
+                num_hands=2,
+                running_mode=mp.tasks.vision.RunningMode.LIVE_STREAM,
+                result_callback=self._on_result,
+                min_hand_detection_confidence=0.5,
+                min_hand_presence_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+            return mp.tasks.vision.HandLandmarker.create_from_options(options)
+
+        Delegate = mp.tasks.BaseOptions.Delegate
+        if self.use_gpu:
+            try:
+                detector = create(Delegate.GPU)
+                print(f"[Model] {model_path} (LIVE_STREAM, num_hands=2, GPU)")
+                return detector
+            except Exception as e:
+                print(f"[Model] GPU tracking unavailable ({e}); using the CPU")
+                self.use_gpu = False
+        print(f"[Model] {model_path} (LIVE_STREAM, num_hands=2, CPU)")
+        return create(Delegate.CPU)
+
+    def _mp_image(self, frame):
+        """BGR camera frame -> the image the detector takes. The GPU path only
+        accepts four channels: a three-channel frame aborts the whole process
+        from inside MediaPipe, so every frame must come through here."""
+        if self.use_gpu:
+            return mp.Image(image_format=mp.ImageFormat.SRGBA,
+                            data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA))
+        return mp.Image(image_format=mp.ImageFormat.SRGB,
+                        data=np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)))
 
     def calibrate(self):
         self._request_calibrate = True
@@ -482,7 +518,7 @@ class TwoHandTracker:
                 continue
 
             frame = cv2.flip(frame, 1)   # mirror, so moving right moves right
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = self._mp_image(frame)
 
             ts_ms = int((t_capture - self._t0) * 1000)
             if ts_ms <= self._last_ts_ms:
@@ -497,8 +533,6 @@ class TwoHandTracker:
                         del self._pending[stale]
                         self.dropped += 1
 
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB,
-                                data=np.ascontiguousarray(rgb))
             self._detector.detect_async(mp_image, ts_ms)
 
     # ---------- detector thread ----------
@@ -1898,6 +1932,8 @@ def parse_args(argv):
                         "(default %.2f %.2f)" % STEER_ZONE_DEFAULT)
     p.add_argument("--swap-hands", action="store_true",
                    help="flip left/right hand detection (or press H while running)")
+    p.add_argument("--cpu-tracking", action="store_true",
+                   help="run hand tracking on the CPU instead of the GPU")
     return p.parse_args(argv)
 
 
@@ -1910,6 +1946,8 @@ if __name__ == "__main__":
     if opts.steer_zone:
         STEER_ZONE = tuple(opts.steer_zone)      # noqa: F841 -- module-level rebind
         globals()["STEER_ZONE"] = STEER_ZONE
+    if opts.cpu_tracking:
+        globals()["USE_GPU"] = False
     spike = Spike(log_path=path, camera_id=opts.camera)
     if opts.swap_hands:
         spike.tracker.swap_handedness = True

@@ -29,9 +29,11 @@ Deliberately forgiving, because ~50-80ms of photon-to-pixel latency is unavoidab
 coyote time, jump buffering, ledge assist, generous stomp windows.
 
 Keyboard fallback is always live: arrows, shift=run, space=jump, X=fire, down=duck.
+F toggles full screen; Esc leaves full screen, or quits from a window.
 
   python platformer.py [--world 1-4] [--level 1-4] [--no-camera] [--camera N]
                        [--steer-zone LO HI] [--swap-hands] [--log [PATH]]
+                       [--fullscreen] [--cpu-tracking]
 """
 
 import argparse
@@ -873,10 +875,19 @@ class Level:
 # ==========================================
 class Game:
     def __init__(self, world=1, level=1, use_camera=True, camera_id=0,
-                 log_path=None):
+                 log_path=None, fullscreen=False):
         pygame.init()
         pygame.display.set_caption("Gesture Platformer")
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
+        # SCALED: the game always draws at 1280x720 and the GPU stretches that to
+        # the screen, so full screen costs no extra drawing and every layout stays
+        # put. The aspect ratio is kept, so a 16:10 Mac screen gets thin bars.
+        # One window per process: a SCALED window cannot always be created twice
+        # (the headless tests build a fresh Game per level), so reuse it.
+        self.fullscreen = fullscreen
+        self.screen = pygame.display.get_surface() or pygame.display.set_mode(
+            (WIDTH, HEIGHT), pygame.SCALED | (pygame.FULLSCREEN if fullscreen else 0))
+        pygame.mouse.set_visible(not fullscreen)
+        self._preview_seq, self._preview = None, None
         self.clock = pygame.time.Clock()
         self.font = self._mono(20, bold=True)
         self.small = self._mono(15)
@@ -1018,7 +1029,10 @@ class Game:
                 if event.type == pygame.QUIT:
                     running = False
                 elif event.type == pygame.KEYDOWN:
-                    if event.key in (pygame.K_ESCAPE, pygame.K_q):
+                    if event.key == pygame.K_f or (
+                            event.key == pygame.K_ESCAPE and self.fullscreen):
+                        self.toggle_fullscreen()
+                    elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                         running = False
                     elif event.key == pygame.K_h and self.tracker:
                         sw = self.tracker.toggle_hand_polarity()
@@ -1071,6 +1085,11 @@ class Game:
             self._csv_file.close()
             print(f"[Log] wrote {self.log_path}")
         pygame.quit()
+
+    def toggle_fullscreen(self):
+        pygame.display.toggle_fullscreen()
+        self.fullscreen = not self.fullscreen
+        pygame.mouse.set_visible(not self.fullscreen)
 
     def in_water(self):
         h = self.hero
@@ -1829,9 +1848,8 @@ class Game:
                     warn = self.small.render("press H", True, (255, 90, 90))
                     self.screen.blit(warn, (bx - 92 + 132, y))
             self.draw_steer_bar(snap, bx - 100, 44)
-            frame = snap["frame"]
-            if frame is not None:
-                surf = self.tracker_surface(frame)
+            if snap["frame"] is not None:
+                surf = self.tracker_surface(snap)
                 self.screen.blit(surf, (bx, HEIGHT - CAM_PREVIEW[1] - 12))
                 pygame.draw.rect(self.screen, (40, 48, 68),
                                  (bx, HEIGHT - CAM_PREVIEW[1] - 12,
@@ -1842,13 +1860,20 @@ class Game:
                 True, (150, 160, 180))
             self.screen.blit(s, (WIDTH - s.get_width() - 18, 22))
 
-    def tracker_surface(self, frame):
-        import cv2
-        import numpy as np
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        surf = pygame.image.frombuffer(np.ascontiguousarray(rgb).tobytes(),
-                                       (frame.shape[1], frame.shape[0]), "RGB")
-        return pygame.transform.smoothscale(surf, CAM_PREVIEW)
+    def tracker_surface(self, snap):
+        """The camera preview, rebuilt only when the camera has a new frame.
+
+        The camera delivers 30 frames a second and the game draws 60, so
+        converting on every draw did each frame's work twice. Shrinking in OpenCV
+        first and handing pygame BGR directly is also several times cheaper than
+        converting the full frame and smoothscaling it down.
+        """
+        if snap["seq"] != self._preview_seq:
+            import cv2
+            small = cv2.resize(snap["frame"], CAM_PREVIEW, interpolation=cv2.INTER_AREA)
+            self._preview = pygame.image.frombuffer(small.tobytes(), CAM_PREVIEW, "BGR")
+            self._preview_seq = snap["seq"]
+        return self._preview
 
     def draw_victory(self, now):
         """The end of the game deserves more than a line of text.
@@ -1993,6 +2018,10 @@ def parse_args(argv):
                    help="flip left/right hand detection (or press H while playing)")
     p.add_argument("--log", nargs="?", const="auto", default=None, metavar="PATH",
                    help="write a CSV of poses and events for analyse_log.py")
+    p.add_argument("--fullscreen", action="store_true",
+                   help="start in full screen (or press F while playing)")
+    p.add_argument("--cpu-tracking", action="store_true",
+                   help="run hand tracking on the CPU instead of the GPU")
     return p.parse_args(argv)
 
 
@@ -2004,9 +2033,11 @@ if __name__ == "__main__":
                             time.strftime("play-log-%Y%m%d-%H%M%S.csv"))
     if opts.steer_zone:
         tracker_mod.STEER_ZONE = tuple(opts.steer_zone)
+    if opts.cpu_tracking:
+        tracker_mod.USE_GPU = False
     game = Game(world=opts.world, level=opts.level,
                 use_camera=not opts.no_camera, camera_id=opts.camera,
-                log_path=path)
+                log_path=path, fullscreen=opts.fullscreen)
     if opts.swap_hands and game.tracker:
         game.tracker.swap_handedness = True
     game.run()

@@ -447,9 +447,9 @@ if model:
         t_cap = time.perf_counter()
         with lt._lock:
             lt._pending[1] = (t_cap, frame)
-        lt._detector.detect_async(
-            mp.Image(image_format=mp.ImageFormat.SRGB,
-                     data=np.ascontiguousarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))), 1)
+        # Through the tracker's own conversion: the GPU detector aborts the
+        # process on a three-channel image, so a hand-built SRGB one is a crash.
+        lt._detector.detect_async(lt._mp_image(frame), 1)
         fired = done.wait(10.0)
         check("result callback fired", fired)
         check("callback ran without exception", got["err"] is None, repr(got["err"]))

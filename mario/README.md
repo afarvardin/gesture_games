@@ -36,6 +36,7 @@ mushroom.
 ./run.sh mario                          # from the repo root (also: platformer, plat)
 ./run.sh mario --world 3 --level 3      # jump straight to the moving lifts
 ./run.sh mario --no-camera              # keyboard only, no webcam needed
+./run.sh mario --fullscreen             # start full screen (or press F in game)
 ```
 
 Anything after the game name is passed straight through to `platformer.py`:
@@ -49,6 +50,33 @@ Anything after the game name is passed straight through to `platformer.py`:
 | `--steer-zone LO HI` | The steering band, as fractions of frame width (default `0.02 0.60`). Lower `HI` for a shorter reach to full speed |
 | `--swap-hands` | Flip which physical hand steers, for a camera that reports handedness reversed. `H` does the same mid-game |
 | `--log [PATH]` | Record every hand pose and gesture event to CSV, for `analyse_log.py` |
+| `--fullscreen` | Start in full screen. `F` toggles it mid-game |
+| `--cpu-tracking` | Run hand tracking on the CPU instead of the GPU (see below). Only needed if GPU tracking misbehaves |
+
+### Heat and battery
+
+Hand tracking is nearly all of the game's cost. Drawing a frame takes about
+0.25ms, while MediaPipe takes 10–20ms per camera frame, 30 times a second. On macOS
+it therefore runs on the **GPU**. Measured on an M4 Pro, with two hands in view and
+the real game loop:
+
+| | Whole game, CPU | Capture to landmarks |
+| --- | --- | --- |
+| CPU tracking (before) | ~67% of a core | ~18ms |
+| GPU tracking (default) | ~42% of a core | ~10ms |
+
+GPU landmarks land within about 1px of the CPU ones, against a hand span of around
+60px, so every threshold below still holds. The GPU path only accepts RGBA frames,
+and a three-channel frame aborts the process from inside MediaPipe, so every frame
+goes through `TwoHandTracker._mp_image`. If the GPU detector cannot be created,
+the tracker falls back to the CPU and says so at startup (`[Model] ... CPU`).
+
+The camera preview is also rebuilt only when a new camera frame arrives (30fps)
+rather than on every draw (60fps).
+
+Full screen does not add any drawing: the game always renders at 1280x720, and
+pygame's `SCALED` mode has the GPU stretch it to the screen, with thin bars on a
+16:10 display.
 
 ### Controls
 
@@ -62,7 +90,9 @@ Anything after the game name is passed straight through to `platformer.py`:
 | `H` | Swap left/right hand detection, if the HUD shows them the wrong way round |
 | `N` | Skip to the next level |
 | `R` | Restart from the first life |
-| `Esc` / `Q` | Quit |
+| `F` | Toggle full screen |
+| `Esc` | Leave full screen; quit when in a window |
+| `Q` | Quit |
 | Arrows, `Shift`, `Space`, `X`, `Down` | Keyboard fallback: move, run, jump, fire, duck — always live alongside the camera |
 
 There is deliberately **no calibration key**: the steering band is fixed, so there
