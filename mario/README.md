@@ -38,6 +38,12 @@ powers show as a tint on the hero and a countdown under the score. World 8 adds
 **skeletons**: a stomp knocks one into a heap of bones that rattles and gets back
 up, so fire is the way to finish one. The last castle ends with the **Magma King**.
 
+Worlds 5-8 each have a look and a name of their own, shown on a title card as a
+level starts: **the Amber Wilds** (autumn, falling leaves, a harvest moon over
+5-3), **the Frostpeak Highlands** (snowy peaks, the northern lights over 6-3),
+**the Storm Coast** (rain and lightning) and **the Ashen Kingdom** (volcanoes and
+falling ash). Their castles are torchlit keeps with embers rising off the lava.
+
 ## Running and options
 
 ```bash

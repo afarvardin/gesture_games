@@ -620,6 +620,30 @@ check("5-1 has a heart block", qc is not None)
 if qc:
     check("it gives up a heart mushroom", g.level.hit_block(qc[0], qc[1], False) == "life")
 
+LATE = [(w, l) for w in (5, 6, 7, 8) for l in (1, 2, 3, 4)]
+
+print("\n[14] Worlds 5-8 each look like somewhere of their own")
+for w in (5, 6, 7, 8):
+    themes_w = {LV.load(w, l)["theme"] for l in (1, 2, 3, 4)}
+    early = {LV.load(e, l)["theme"] for e in (1, 2, 3, 4) for l in (1, 2, 3, 4)}
+    check(f"World {w} has a theme no early world uses", themes_w - early,
+          str(sorted(themes_w)))
+    check(f"World {w} has a name on its title card", w in P.WORLD_NAMES)
+weathered = [f"{w}-{l}" for w, l in LATE
+             if LV.load(w, l)["weather"] or P.THEMES[LV.load(w, l)["theme"]].get("weather")]
+check("every World 5-8 level has weather", len(weathered) == len(LATE), str(weathered))
+check("water levels keep swim physics",
+      all(LV.load(7, l)["theme"] == LV.THEME_WATER for l in (2, 3)))
+g = new_game(6, 3)
+g.update(0.0, False, False, DT, 8000.0)
+try:
+    g.draw(None, 8000.5)
+    ok = True
+except Exception:
+    import traceback; traceback.print_exc()
+    ok = False
+check("the title card draws", ok and g.title_at == 8000.0)
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:

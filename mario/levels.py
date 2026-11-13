@@ -66,6 +66,20 @@ THEME_UNDERGROUND = "underground"
 THEME_CASTLE = "castle"
 THEME_WATER = "water"
 THEME_NIGHT = "night"      # World 3's overworld levels are after dark
+# Worlds 5-8 each get a look of their own, so the back half of the game does not
+# feel like the front half again. Palette and backdrop only: physics never reads
+# these, except water, which stays THEME_WATER wherever there is swimming.
+THEME_AUTUMN = "autumn"           # World 5, the Amber Wilds
+THEME_HARVEST = "harvest"         # 5-3: a harvest moon and fireflies
+THEME_HIGHLANDS = "highlands"     # World 6, snow on the peaks
+THEME_AURORA = "aurora"           # 6-3: the high level, under the northern lights
+THEME_STORM = "storm"             # World 7, rain and lightning
+THEME_ASHEN = "ashen"             # World 8, under the volcanoes
+THEME_KEEP = "keep"               # the World 5-8 castles: torchlit, embers rising
+
+# Weather a level can ask for on top of its theme (water levels cannot change
+# theme without changing physics, so they get their weather this way).
+WEATHERS = ("leaves", "fireflies", "snow", "rain", "ash", "embers", "bubbles")
 
 # Jump geometry, mirrored from the engine so the validator can reason about it.
 # Weakest flick the gesture layer can make carries ~3.6 tiles walking, ~7 running,
@@ -108,6 +122,7 @@ class Builder:
         self.end = None                    # ("flag", col) | ("axe", col)
         self.water_cols = set()
         self.ceiling = False
+        self.weather = None         # one of WEATHERS, or the theme's own
         self.problems = []          # collected, so one run reports every mistake
         self.gates = []             # (column, row of the high road above it)
         self.no_reach = set()       # blocks exempt from the reachability rule
@@ -464,6 +479,7 @@ class Builder:
             "water": sorted(self.water_cols),
             "ceiling": self.ceiling,
             "gates": list(self.gates),
+            "weather": self.weather,
         }
 
 
@@ -1015,7 +1031,7 @@ def w4_4():
 # ===========================================================================
 def w5_1():
     """Overworld. Cannons on plateaus, and hammer bros guarding the flag."""
-    b = Builder(128, THEME_OVERWORLD, "5-1")
+    b = Builder(128, THEME_AUTUMN, "5-1")
     b.floor()
     for a in (30, 52, 76, 100):
         b.gap(a, a + 1)
@@ -1045,7 +1061,7 @@ def w5_1():
 
 def w5_2():
     """Overworld with a pipe down to a coin room and lifts over the gaps."""
-    b = Builder(132, THEME_OVERWORLD, "5-2")
+    b = Builder(132, THEME_AUTUMN, "5-2")
     b.floor()
     for a in (26, 48, 70, 92, 114):
         b.gap(a, a + 1)
@@ -1086,7 +1102,7 @@ def w5_2_bonus():
 
 def w5_3():
     """Night athletic: mushroom platforms and paratroopas over a gappy floor."""
-    b = Builder(120, THEME_NIGHT, "5-3")
+    b = Builder(120, THEME_HARVEST, "5-3")
     b.floor()
     for a in (20, 38, 56, 74, 92):
         b.gap(a, a + 1)
@@ -1112,6 +1128,7 @@ def w5_3():
 def w5_4():
     """Castle: firebars over a long run of lava, podoboos between them."""
     b = Builder(118, THEME_CASTLE, "5-4")
+    b = Builder(118, THEME_KEEP, "5-4")
     b.floor()
     b.start(3)
     for a in (18, 32, 48, 64, 80, 96):
@@ -1147,7 +1164,7 @@ def w5_4():
 # ===========================================================================
 def w6_1():
     """Overworld built in tiers: stone plateaus you climb rather than run past."""
-    b = Builder(126, THEME_OVERWORLD, "6-1")
+    b = Builder(126, THEME_HIGHLANDS, "6-1")
     b.floor()
     for a in (28, 50, 74, 98):
         b.gap(a, a + 1)
@@ -1176,7 +1193,7 @@ def w6_1():
 
 def w6_2():
     """Overworld, long and pipe-heavy, with a beanstalk hidden mid-level."""
-    b = Builder(134, THEME_OVERWORLD, "6-2")
+    b = Builder(134, THEME_HIGHLANDS, "6-2")
     b.floor()
     for a in (30, 54, 78, 104):
         b.gap(a, a + 1)
@@ -1222,7 +1239,7 @@ def w6_2_sky():
 def w6_3():
     """The high athletic level: everything happens on platforms, with paratroopas
     patrolling the gaps between them."""
-    b = Builder(126, THEME_NIGHT, "6-3")
+    b = Builder(126, THEME_AURORA, "6-3")
     b.floor()
     for a in (18, 34, 50, 66, 82, 98):
         b.gap(a, a + 1)
@@ -1249,6 +1266,7 @@ def w6_3():
 def w6_4():
     """Castle: firebars over lava, and lifts to carry you between the shelves."""
     b = Builder(120, THEME_CASTLE, "6-4")
+    b = Builder(120, THEME_KEEP, "6-4")
     b.floor()
     b.start(3)
     for a in (18, 34, 52, 70, 88):
@@ -1284,7 +1302,7 @@ def w6_4():
 # ===========================================================================
 def w7_1():
     """Overworld under a Lakitu, with cannons along the way."""
-    b = Builder(128, THEME_OVERWORLD, "7-1")
+    b = Builder(128, THEME_STORM, "7-1")
     b.floor()
     for a in (30, 54, 78, 102):
         b.gap(a, a + 1)
@@ -1314,6 +1332,7 @@ def w7_1():
 def w7_2():
     """Underwater again, busier than 2-2: cheep-cheeps at every depth."""
     b = Builder(124, THEME_WATER, "7-2")
+    b.weather = "bubbles"
     b.floor()
     b.roof(rows=1)
     b.water(top=1)
@@ -1339,6 +1358,7 @@ def w7_2():
 def w7_3():
     """Bridges over water, with more cheep-cheeps leaping through than 2-3."""
     b = Builder(124, THEME_WATER, "7-3")
+    b.weather = "rain"              # World 7's storm, over open water
     b.bridge(FLOOR, 0, 123)
     b.water(top=FLOOR + 1)
     b.start(3)
@@ -1356,8 +1376,9 @@ def w7_3():
 
 
 def w7_4():
-    """A maze castle with two forks: both low roads are walled off."""
-    b = Builder(126, THEME_CASTLE, "7-4")
+    """A maze castle with two forks: both low roads are walled off. The Storm
+    Drake at the end breathes twice, so one jump is not enough."""
+    b = Builder(126, THEME_KEEP, "7-4")
     b.floor()
     b.start(3)
     for a in (16, 32, 74, 86):
@@ -1398,7 +1419,7 @@ def w8_1():
 
     World 8 is where the skeletons are: a stomp only knocks one into a heap of
     bones that pulls itself back together, so fire is the way to finish one."""
-    b = Builder(160, THEME_OVERWORLD, "8-1")
+    b = Builder(160, THEME_ASHEN, "8-1")
     b.floor()
     for a in (26, 46, 66, 86, 108, 130):
         b.gap(a, a + 1)
@@ -1432,7 +1453,7 @@ def w8_1():
 
 def w8_2():
     """Cannon alley, with hammer bros on brick towers at the end."""
-    b = Builder(150, THEME_OVERWORLD, "8-2")
+    b = Builder(150, THEME_ASHEN, "8-2")
     b.floor()
     for a in (30, 52, 74, 98, 120):
         b.gap(a, a + 1)
@@ -1466,7 +1487,7 @@ def w8_2():
 
 def w8_3():
     """The hammer bro gauntlet: four pairs on brick towers, one after another."""
-    b = Builder(140, THEME_OVERWORLD, "8-3")
+    b = Builder(140, THEME_ASHEN, "8-3")
     b.floor()
     b.start(3)
     b.enemy(12, "koopa")
@@ -1501,6 +1522,7 @@ def w8_4():
     """The last castle. Forks over lava with the low roads walled off, and Bowser at
     the end -- five fireballs, or slip past him to the axe."""
     b = Builder(140, THEME_CASTLE, "8-4")
+    b = Builder(140, THEME_KEEP, "8-4")
     b.floor()
     b.start(3)
     for a in (16, 32, 76, 88):

@@ -190,7 +190,74 @@ THEMES = {
         stone=(150, 170, 190), block=(232, 178, 62), block_edge=(150, 104, 20),
         hills=False, clouds=False, stars=True, night=False,
     ),
+    # ---- Worlds 5-8: a look per world (see levels.py) ----
+    LV.THEME_AUTUMN: dict(
+        sky_top=(236, 132, 78), sky_bottom=(255, 214, 150),
+        ground=(132, 78, 40), ground_top=(214, 130, 40),
+        brick=(176, 86, 44), brick_line=(120, 52, 24),
+        stone=(176, 150, 124), block=(232, 178, 62), block_edge=(150, 104, 20),
+        hills=True, clouds=True, stars=False, night=False,
+        hill_cols=((178, 86, 40), (206, 122, 50)), cloud_col=(255, 232, 210),
+        weather="leaves",
+    ),
+    LV.THEME_HARVEST: dict(
+        sky_top=(16, 10, 40), sky_bottom=(70, 40, 70),
+        ground=(96, 58, 40), ground_top=(160, 100, 40),
+        brick=(140, 80, 50), brick_line=(90, 50, 30),
+        stone=(150, 130, 120), block=(232, 178, 62), block_edge=(150, 104, 20),
+        hills=True, clouds=False, stars=True, night=True,
+        hill_cols=((44, 30, 48), (60, 40, 60)), backdrop="moon",
+        weather="fireflies",
+    ),
+    LV.THEME_HIGHLANDS: dict(
+        sky_top=(110, 150, 214), sky_bottom=(214, 230, 248),
+        ground=(104, 92, 88), ground_top=(236, 244, 252),
+        brick=(150, 108, 92), brick_line=(100, 66, 56),
+        stone=(186, 194, 210), block=(232, 178, 62), block_edge=(150, 104, 20),
+        hills=False, clouds=True, stars=False, night=False,
+        backdrop="mountains", weather="snow",
+    ),
+    LV.THEME_AURORA: dict(
+        sky_top=(4, 8, 26), sky_bottom=(18, 36, 66),
+        ground=(70, 66, 80), ground_top=(210, 222, 240),
+        brick=(110, 90, 120), brick_line=(70, 54, 80),
+        stone=(160, 168, 190), block=(232, 178, 62), block_edge=(150, 104, 20),
+        hills=False, clouds=False, stars=True, night=True,
+        backdrop="aurora", weather="snow",
+    ),
+    LV.THEME_STORM: dict(
+        sky_top=(36, 42, 56), sky_bottom=(88, 98, 116),
+        ground=(84, 76, 62), ground_top=(64, 116, 70),
+        brick=(126, 88, 66), brick_line=(84, 56, 40),
+        stone=(140, 146, 156), block=(214, 164, 60), block_edge=(130, 90, 20),
+        hills=True, clouds=True, stars=False, night=False,
+        hill_cols=((48, 82, 58), (58, 96, 66)), cloud_col=(74, 80, 96),
+        weather="rain",
+    ),
+    LV.THEME_ASHEN: dict(
+        # The glow is on the horizon, not the bottom of the screen: pits show the
+        # sky, and a red-orange pit reads as lava.
+        sky_top=(30, 6, 10), sky_bottom=(84, 30, 24),
+        ground=(66, 52, 54), ground_top=(104, 84, 64),
+        brick=(116, 62, 50), brick_line=(70, 34, 28),
+        stone=(124, 112, 112), block=(214, 150, 60), block_edge=(130, 80, 20),
+        hills=False, clouds=False, stars=False, night=False,
+        backdrop="volcanoes", weather="ash",
+    ),
+    LV.THEME_KEEP: dict(
+        sky_top=(8, 0, 2), sky_bottom=(42, 12, 10),
+        ground=(108, 98, 104), ground_top=(146, 136, 144),
+        brick=(132, 118, 124), brick_line=(84, 70, 76),
+        stone=(90, 80, 88), block=(200, 150, 60), block_edge=(120, 84, 16),
+        hills=False, clouds=False, stars=False, night=False,
+        backdrop="torches", weather="embers",
+    ),
 }
+
+# The name of each world from 5 on, shown on a title card as a level starts.
+WORLD_NAMES = {5: "THE AMBER WILDS", 6: "THE FROSTPEAK HIGHLANDS",
+               7: "THE STORM COAST", 8: "THE ASHEN KINGDOM"}
+TITLE_CARD_SECS = 2.6
 
 # One colour per role, everywhere: blue is the LEFT hand and moves you, orange is
 # the RIGHT hand and throws fire. The HUD used to colour these by whether the hand
@@ -1351,6 +1418,7 @@ class Game:
         self.cam_x = 0.0
         self.level_start = time.perf_counter()
         self.return_col = None
+        self.title_at = None             # set on the first frame of play
 
     def spawn_entities(self, now=0.0):
         self.enemies = [Enemy(c * TILE + 4, (r + 1) * TILE, kind, now)
@@ -1543,6 +1611,8 @@ class Game:
                 self.next_level(now)
             return
 
+        if self.title_at is None:
+            self.title_at = now
         h = self.hero
         water = self.in_water()
         if now < h.grow_until or now < h.pipe_until:
@@ -1979,6 +2049,7 @@ class Game:
         self.draw_tiles(th, ox, now)
         self.draw_loop_gates(ox, now)
         self.draw_entities(ox, now)
+        self.draw_weather(th, ox, now)
         self.draw_hud(snap, now)
         self.draw_overlays(now)
         pygame.display.flip()
@@ -1999,26 +2070,189 @@ class Game:
 
     def draw_background(self, th, ox, now):
         """Parallax hills and clouds, so the levels do not all look the same."""
-        if th["hills"]:
-            for i in range(-1, WIDTH // 320 + 3):
-                bx = i * 320 - int(ox * 0.35) % 320
-                base = HUD_H + LV.FLOOR * TILE
-                pygame.draw.polygon(self.screen, (60, 150, 60), [
-                    (bx, base), (bx + 90, base - 78), (bx + 180, base)])
-                pygame.draw.polygon(self.screen, (78, 168, 74), [
-                    (bx + 150, base), (bx + 215, base - 48), (bx + 280, base)])
-        if th["clouds"]:
-            for i in range(-1, WIDTH // 260 + 3):
-                cx = i * 260 - int(ox * 0.18) % 260
-                cy = 110 + (i % 3) * 46
-                for dx, dy, rr in ((0, 0, 22), (24, 6, 18), (-22, 6, 16)):
-                    pygame.draw.circle(self.screen, (250, 250, 255),
-                                       (cx + dx, cy + dy), rr)
         if th["stars"]:
             for i in range(60):
                 sx = (i * 197 - int(ox * 0.1)) % WIDTH
                 sy = HUD_H + (i * 83) % 260
                 pygame.draw.circle(self.screen, (200, 230, 255), (sx, sy), 1)
+        backdrop = th.get("backdrop")
+        if backdrop:
+            getattr(self, f"draw_backdrop_{backdrop}")(ox, now)
+        if th["hills"]:
+            near, far = th.get("hill_cols", ((60, 150, 60), (78, 168, 74)))
+            for i in range(-1, WIDTH // 320 + 3):
+                bx = i * 320 - int(ox * 0.35) % 320
+                base = HUD_H + LV.FLOOR * TILE
+                pygame.draw.polygon(self.screen, near, [
+                    (bx, base), (bx + 90, base - 78), (bx + 180, base)])
+                pygame.draw.polygon(self.screen, far, [
+                    (bx + 150, base), (bx + 215, base - 48), (bx + 280, base)])
+        if th["clouds"]:
+            col = th.get("cloud_col", (250, 250, 255))
+            for i in range(-1, WIDTH // 260 + 3):
+                cx = i * 260 - int(ox * 0.18) % 260
+                cy = 110 + (i % 3) * 46
+                for dx, dy, rr in ((0, 0, 22), (24, 6, 18), (-22, 6, 16)):
+                    pygame.draw.circle(self.screen, col, (cx + dx, cy + dy), rr)
+
+    # ---- backdrops for Worlds 5-8. All positions come from an index and the
+    # clock, never random numbers, so a frame is reproducible for the tests. ----
+    def draw_backdrop_moon(self, ox, now):
+        """A low harvest moon over 5-3."""
+        cx, cy = WIDTH - 260 - int(ox * 0.04) % 80, HUD_H + 120
+        glow = pygame.Surface((260, 260), pygame.SRCALPHA)
+        for r, a in ((128, 18), (100, 26), (80, 40)):
+            pygame.draw.circle(glow, (255, 190, 110, a), (130, 130), r)
+        self.screen.blit(glow, (cx - 130, cy - 130))
+        pygame.draw.circle(self.screen, (252, 196, 120), (cx, cy), 62)
+        for dx, dy, r in ((-18, -14, 11), (20, 8, 8), (-6, 24, 6), (26, -22, 5)):
+            pygame.draw.circle(self.screen, (232, 170, 100), (cx + dx, cy + dy), r)
+
+    def _ridge(self, ox, rate, spacing, height, base, col, cap=None, seed=0):
+        """A repeating band of peaks; cap colours the snow on top."""
+        for i in range(-1, WIDTH // spacing + 3):
+            k = (i + int(ox * rate) // spacing + seed) % 5
+            bx = i * spacing - int(ox * rate) % spacing
+            h = height * (0.65 + 0.35 * ((k * 37) % 10) / 10)
+            peak = (bx + spacing // 2, base - h)
+            pygame.draw.polygon(self.screen, col,
+                                [(bx - spacing // 3, base), peak,
+                                 (bx + spacing + spacing // 3, base)])
+            if cap:
+                t = 0.28
+                pygame.draw.polygon(self.screen, cap, [
+                    peak,
+                    (peak[0] - (spacing // 2 + spacing // 3) * t, peak[1] + h * t),
+                    (peak[0] - 6, peak[1] + h * t * 0.7),
+                    (peak[0] + 4, peak[1] + h * t),
+                    (peak[0] + (spacing // 2 + spacing // 3) * t, peak[1] + h * t)])
+
+    def draw_backdrop_mountains(self, ox, now):
+        base = HUD_H + LV.FLOOR * TILE
+        self._ridge(ox, 0.12, 300, 300, base, (168, 182, 210), (246, 250, 255), 0)
+        self._ridge(ox, 0.28, 220, 190, base, (118, 134, 162), (232, 240, 250), 2)
+
+    def draw_backdrop_aurora(self, ox, now):
+        """Northern lights over 6-3, then the peaks in silhouette."""
+        sky = pygame.Surface((WIDTH, 300), pygame.SRCALPHA)
+        for band, (col, y0, amp) in enumerate((((60, 255, 170), 90, 30),
+                                               ((80, 200, 255), 130, 24),
+                                               ((170, 120, 255), 70, 18))):
+            pts = []
+            for i in range(0, WIDTH + 40, 40):
+                x = i
+                y = y0 + amp * math.sin(i * 0.006 + now * 0.5 + band * 1.7) \
+                    + 10 * math.sin(i * 0.02 - now * 0.9 + band)
+                pts.append((x, y))
+            for w, a in ((26, 22), (14, 40), (5, 90)):
+                pygame.draw.lines(sky, col + (a,), False, pts, w)
+        self.screen.blit(sky, (0, HUD_H))
+        base = HUD_H + LV.FLOOR * TILE
+        self._ridge(ox, 0.12, 300, 300, base, (26, 34, 58), (90, 104, 136), 0)
+        self._ridge(ox, 0.28, 220, 190, base, (16, 22, 40), (70, 84, 112), 2)
+
+    def draw_backdrop_volcanoes(self, ox, now):
+        """World 8's skyline: volcanoes with glowing mouths and smoke."""
+        base = HUD_H + LV.FLOOR * TILE
+        spacing = 520
+        for i in range(-1, WIDTH // spacing + 3):
+            bx = i * spacing - int(ox * 0.15) % spacing
+            top = base - 250 - (i % 2) * 40
+            pygame.draw.polygon(self.screen, (26, 8, 10), [
+                (bx - 140, base), (bx + 120, top), (bx + 170, top),
+                (bx + 430, base)])
+            pulse = 0.6 + 0.4 * math.sin(now * 2 + i)
+            pygame.draw.polygon(self.screen, (int(255 * pulse), int(110 * pulse), 30), [
+                (bx + 120, top), (bx + 170, top), (bx + 160, top + 12),
+                (bx + 130, top + 12)])
+            for k in range(6):                       # a smoke plume, drifting
+                t = (now * 0.25 + k / 6) % 1.0
+                r = int(14 + 30 * t)
+                sm = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+                pygame.draw.circle(sm, (70, 50, 52, int(120 * (1 - t))), (r, r), r)
+                self.screen.blit(sm, (bx + 145 - r + int(60 * t), top - 10 - int(170 * t) - r))
+        self._ridge(ox, 0.3, 260, 120, base, (18, 6, 8), None, 1)
+
+    def draw_backdrop_torches(self, ox, now):
+        """Torches along the castle wall, lit and flickering."""
+        for c in range(max(0, ox // TILE - 1), (ox + WIDTH) // TILE + 2):
+            if c % 9 != 4:
+                continue
+            x = c * TILE - ox + TILE // 2
+            y = HUD_H + (LV.FLOOR - 6) * TILE
+            pygame.draw.rect(self.screen, (60, 46, 40), (x - 3, y, 6, 22))
+            pygame.draw.rect(self.screen, (90, 70, 60), (x - 8, y + 2, 16, 4))
+            f = 0.75 + 0.25 * math.sin(now * 13 + c * 1.7) * math.sin(now * 7 + c)
+            glow = pygame.Surface((120, 120), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (255, 140, 50, int(40 * f)), (60, 60), 56)
+            self.screen.blit(glow, (x - 60, y - 66))
+            pygame.draw.polygon(self.screen, (255, 140, 40), [
+                (x - 7, y), (x, y - int(22 * f)), (x + 7, y)])
+            pygame.draw.polygon(self.screen, (255, 230, 140), [
+                (x - 3, y), (x, y - int(12 * f)), (x + 3, y)])
+
+    def draw_weather(self, th, ox, now):
+        """Foreground weather for Worlds 5-8: a level's own, or its theme's."""
+        kind = self.level.data.get("weather") or th.get("weather")
+        if not kind:
+            return
+        s = self.screen
+        top, span = HUD_H, HEIGHT - HUD_H
+        if kind == "leaves":
+            cols = ((230, 110, 40), (200, 70, 40), (240, 180, 60))
+            for i in range(36):
+                x = (i * 211 + now * 40 - ox * 0.6) % (WIDTH + 40) - 20
+                x += 18 * math.sin(now * 1.5 + i)
+                y = top + (i * 97 + now * (34 + i % 5 * 6)) % span
+                a = now * 3 + i
+                dx, dy = 5 * math.cos(a), 2.5 * math.sin(a)
+                pygame.draw.polygon(s, cols[i % 3], [(x - dx, y - dy), (x + dy, y - dx),
+                                                     (x + dx, y + dy), (x - dy, y + dx)])
+        elif kind == "snow":
+            for i in range(70):
+                x = (i * 137 - ox * (0.3 + (i % 3) * 0.2)) % WIDTH
+                x += 10 * math.sin(now * 0.9 + i)
+                y = top + (i * 61 + now * (24 + i % 4 * 10)) % span
+                pygame.draw.circle(s, (250, 252, 255), (int(x), int(y)), 1 + i % 2)
+        elif kind == "rain":
+            for i in range(110):
+                x = (i * 157 - ox * 0.9 - now * 120) % (WIDTH + 60)
+                y = top + (i * 71 + now * 640) % span
+                pygame.draw.line(s, (170, 186, 214), (x, y), (x - 5, y + 16), 1)
+            phase = now % 7.3                        # lightning, now and then
+            if phase < 0.07 or 0.15 < phase < 0.21:
+                flash = pygame.Surface((WIDTH, HEIGHT - HUD_H), pygame.SRCALPHA)
+                flash.fill((230, 236, 255, 90))
+                s.blit(flash, (0, HUD_H))
+        elif kind == "fireflies":
+            for i in range(28):
+                x = (i * 173 - ox * 0.5 + 30 * math.sin(now * 0.6 + i * 2)) % WIDTH
+                y = top + 120 + (i * 53) % (span - 200) + 20 * math.sin(now * 0.8 + i)
+                k = 0.5 + 0.5 * math.sin(now * 3 + i * 1.3)
+                if k < 0.25:
+                    continue
+                glow = pygame.Surface((16, 16), pygame.SRCALPHA)
+                pygame.draw.circle(glow, (220, 255, 120, int(90 * k)), (8, 8), 7)
+                s.blit(glow, (int(x) - 8, int(y) - 8))
+                pygame.draw.circle(s, (240, 255, 170), (int(x), int(y)), 1)
+        elif kind in ("ash", "embers"):
+            if kind == "ash":
+                for i in range(50):
+                    x = (i * 149 - ox * 0.5 + 14 * math.sin(now * 0.7 + i)) % WIDTH
+                    y = top + (i * 67 + now * (20 + i % 4 * 7)) % span
+                    pygame.draw.circle(s, (120, 110, 110), (int(x), int(y)), 1 + i % 2)
+            for i in range(26 if kind == "ash" else 40):
+                x = (i * 191 - ox * 0.7 + 12 * math.sin(now * 1.3 + i)) % WIDTH
+                t = (now * (0.10 + (i % 5) * 0.03) + i * 0.137) % 1.0
+                y = HEIGHT - t * span
+                k = 1 - t
+                pygame.draw.circle(s, (255, int(120 + 100 * k), 40), (int(x), int(y)),
+                                   1 + (i % 3 == 0))
+        elif kind == "bubbles":
+            for i in range(30):
+                x = (i * 167 - ox * 0.8 + 8 * math.sin(now * 2 + i)) % WIDTH
+                y = HEIGHT - (i * 59 + now * (40 + i % 4 * 12)) % span
+                pygame.draw.circle(s, (190, 230, 255), (int(x), int(y)), 2 + i % 3, 1)
 
     def draw_tiles(self, th, ox, now):
         first = max(0, ox // TILE)
@@ -2484,7 +2718,28 @@ class Game:
         hint = self.small.render("R to play again    Esc to quit", True, (170, 180, 210))
         self.screen.blit(hint, (cx - hint.get_width() // 2, y + 12))
 
+    def draw_title_card(self, now):
+        """'WORLD 6-2 / THE FROSTPEAK HIGHLANDS', fading out as the level starts."""
+        name = WORLD_NAMES.get(self.world)
+        if not name or self.in_bonus or self.title_at is None or self.state != "play":
+            return
+        t = now - self.title_at
+        if t >= TITLE_CARD_SECS:
+            return
+        fade = clamp(min(t / 0.25, (TITLE_CARD_SECS - t) / 0.6), 0.0, 1.0)
+        box = pygame.Rect(0, HUD_H + 150, WIDTH, 130)
+        band = pygame.Surface(box.size, pygame.SRCALPHA)
+        band.fill((8, 8, 14, int(170 * fade)))
+        self.screen.blit(band, box.topleft)
+        for text, font, col, dy in ((f"WORLD {self.world}-{self.level_no}",
+                                     self.big_font, C_COIN, 22),
+                                    (name, self.font, C_TEXT, 84)):
+            surf = font.render(text, True, col)
+            surf.set_alpha(int(255 * fade))
+            self.screen.blit(surf, (WIDTH // 2 - surf.get_width() // 2, box.y + dy))
+
     def draw_overlays(self, now):
+        self.draw_title_card(now)
         if self.toast and now < self.toast_until:
             s = self.font.render(self.toast, True, (255, 255, 255))
             self.screen.blit(s, (WIDTH // 2 - s.get_width() // 2, HUD_H + 20))
