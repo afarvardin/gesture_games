@@ -661,6 +661,34 @@ check("and a death respawns you at it", abs(g.hero.x - cp * P.TILE) < 1,
 g = new_game(1, 1)
 check("World 1 has no checkpoints", not g.level.checkpoints)
 
+print("\n[16] ember gems: three a level, all three is a life")
+for w, l in LATE:
+    g = new_game(w, l)
+    check(f"{w}-{l} has 3 gems", g.gems_total == 3, f"{g.gems_total}")
+g = new_game(5, 1)
+spots = [(c, r) for r, row in enumerate(g.level.rows) for c, ch in enumerate(row)
+         if ch == LV.GEM]
+lives, now = g.lives, 8200.0
+for c, r in spots:
+    g.hero.x, g.hero.y = c * P.TILE + 4, (r + 1) * P.TILE
+    g.collect_coins(now)
+check("collecting all three gems is a life", g.lives == lives + 1
+      and len(g.gems_found) == 3, f"lives {lives}->{g.lives}")
+g = new_game(5, 2)
+g.hero.x = 18 * P.TILE
+g._pipe_target = "bonus"
+g.finish_pipe(now)
+spot = next((c, r) for r, row in enumerate(g.level.rows) for c, ch in enumerate(row)
+            if ch == LV.GEM)
+g.hero.x, g.hero.y = spot[0] * P.TILE + 4, (spot[1] + 1) * P.TILE
+g.collect_coins(now)
+g._pipe_target = 22
+g.finish_pipe(now)
+g._pipe_target = "bonus"
+g.finish_pipe(now)
+check("a gem taken in a bonus room stays taken", LV.GEM not in "".join(
+    "".join(r) for r in g.level.rows), g.level.name)
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:

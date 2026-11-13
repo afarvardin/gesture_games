@@ -1423,6 +1423,10 @@ class Game:
         self.checkpoint = None           # column of the last banner passed
         # Gems are counted across the level AND its bonus room, which is rebuilt
         # every time you go in -- so the ones taken are remembered by position.
+        self.gems_found = set()
+        bonus = LV.load_bonus(self.main.name)
+        self.gems_total = sum("".join(d["rows"]).count(LV.GEM)
+                              for d in (self.main.data, bonus) if d)
 
     def spawn_entities(self, now=0.0):
         self.enemies = [Enemy(c * TILE + 4, (r + 1) * TILE, kind, now)
@@ -1457,6 +1461,9 @@ class Game:
                 self.state = "play"
                 return
             self.bonus = Level(data)
+            for name, c, r in self.gems_found:
+                if name == self.bonus.name:
+                    self.bonus.rows[r][c] = LV.EMPTY
             self.level = self.bonus
             self.in_bonus = True
             self.hero.spawn = self.bonus.start
@@ -1728,7 +1735,7 @@ class Game:
         self.collide_entities(now)
         if self.state != "play":
             return
-        self.collect_coins()
+        self.collect_coins(now)
         self.check_end(now)
 
         target_cam = h.x - WIDTH * 0.42
@@ -1949,13 +1956,27 @@ class Game:
         else:
             self.kill(now, "hit")
 
-    def collect_coins(self):
+    def collect_coins(self, now=0.0):
         hr = self.hero.rect()
         for col in range(hr.left // TILE, hr.right // TILE + 1):
             for row in range(hr.top // TILE, hr.bottom // TILE + 1):
                 if self.level.take_coin(col, row):
                     self.score += 50
                     self.coins_taken += 1
+                elif self.level.tile_at(col, row) == LV.GEM:
+                    self.level.rows[row][col] = LV.EMPTY
+                    self.take_gem(col, row, now)
+
+    def take_gem(self, col, row, now):
+        """Ember gems: three to a level from World 5. All three is a life."""
+        self.gems_found.add((self.level.name, col, row))
+        got = len(self.gems_found)
+        self.score += 1000
+        if got >= self.gems_total:
+            self.lives += 1
+            self._toast(f"ALL {self.gems_total} EMBER GEMS! +1 LIFE", now, 2.2)
+        else:
+            self._toast(f"EMBER GEM {got}/{self.gems_total}", now, 1.4)
 
     def check_end(self, now):
         lv = self.level
@@ -2374,6 +2395,20 @@ class Game:
                 side = -1 if i % 2 else 1
                 pygame.draw.ellipse(s, (80, 200, 90),
                                     (x + 20 + side * 12 - 6, yy - 16, 14, 10))
+        elif ch == LV.GEM:
+            bob = math.sin(now * 3 + c) * 3
+            cx, cy = x + TILE // 2, y + TILE // 2 + bob
+            glow = pygame.Surface((48, 48), pygame.SRCALPHA)
+            pygame.draw.circle(glow, (255, 90, 40, int(50 + 30 * math.sin(now * 4 + c))),
+                               (24, 24), 22)
+            s.blit(glow, (cx - 24, cy - 24))
+            gem = [(cx, cy - 13), (cx + 10, cy - 4), (cx, cy + 13), (cx - 10, cy - 4)]
+            pygame.draw.polygon(s, (220, 40, 40), gem)
+            pygame.draw.polygon(s, (255, 120, 80), [(cx, cy - 13), (cx + 10, cy - 4),
+                                                     (cx, cy - 1), (cx - 10, cy - 4)])
+            pygame.draw.polygon(s, (120, 10, 20), gem, 2)
+            if int(now * 2 + c) % 3 == 0:                      # a glint
+                pygame.draw.line(s, (255, 255, 230), (cx - 4, cy - 8), (cx - 1, cy - 8))
         elif ch == LV.CHECK:
             taken = (not self.in_bonus and self.checkpoint is not None
                      and c <= self.checkpoint)
@@ -2630,8 +2665,20 @@ class Game:
             surf = self.font.render(txt, True, C_TEXT)
             self.screen.blit(surf, (x, 12))
             x += surf.get_width() + 26
-        # Running powers, on a second line under the score.
+        # Gems found, then running powers, on a second line under the score.
         x = 18
+        if self.gems_total:
+            label = self.small.render("GEMS", True, (255, 150, 120))
+            self.screen.blit(label, (x, 40))
+            x += label.get_width() + 8
+            for i in range(self.gems_total):
+                cx, cy = x + 6, 49
+                pts = [(cx, cy - 7), (cx + 6, cy), (cx, cy + 7), (cx - 6, cy)]
+                if i < len(self.gems_found):
+                    pygame.draw.polygon(self.screen, (230, 50, 50), pts)
+                pygame.draw.polygon(self.screen, (255, 150, 120), pts, 1)
+                x += 16
+            x += 18
         h = self.hero
         for name, until, col in (("SPRING", h.spring_until, (90, 220, 235)),
                                  ("GOLD", h.gold_until, (255, 205, 60))):
@@ -2790,7 +2837,10 @@ class Game:
             last = (self.world, self.level_no) == (len(LV.WORLDS),
                                                    len(LV.WORLDS[-1]))
             nxt = "" if last else "next level..."
-            banner = (f"{self.level.name} CLEAR!", nxt or "R to restart")
+            sub = nxt or "R to restart"
+            if self.gems_total:
+                sub = f"ember gems {len(self.gems_found)}/{self.gems_total}     {sub}"
+            banner = (f"{self.level.name} CLEAR!", sub)
         elif self.state == "complete":
             self.draw_victory(now)
             return

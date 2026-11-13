@@ -47,6 +47,7 @@ falling ash). Their castles are torchlit keeps with embers rising off the lava.
 Every level from World 5 on also has:
 
 - a **checkpoint banner** partway through; die past it and you come back there;
+- three hidden **ember gems** (some in the bonus rooms); find all three for a life;
 
 ## Running and options
 

@@ -52,6 +52,7 @@ VINE = "v"                # beanstalk: touch it to be carried to a sky area
 LOOP = "@"                # 4-4's maze trigger: cross it low and you go back
 CHECK = "k"               # checkpoint banner (Worlds 5-8): die past it and you
                           # come back here, not to the start
+GEM = "*"                 # ember gem (Worlds 5-8): three hidden in each level
 
 # What each kind of ? block gives up when it is bumped.
 QBLOCKS = {QCOIN: "coin", QMUSH: "mushroom", QLIFE: "life", QSPRING: "spring",
@@ -357,6 +358,15 @@ class Builder:
 
     def podoboo(self, col):
         self.enemies.append((col, FLOOR - 1, "podoboo"))
+    def gem(self, row, col):
+        """An ember gem. Never over a pit, and held to the same reachability rule
+        as a block: a weak flick from the floor, or a step within reach."""
+        self._assert_clear_of_gaps((col,), "gem")
+        if self.g[row][col] not in (EMPTY, COIN, WATER):
+            self.problems.append(f"gem at ({col},{row}) is inside '{self.g[row][col]}'")
+        self.g[row][col] = GEM
+        return self
+
     def checkpoint(self, col):
         """A banner on open floor. It has to be somewhere calm: you will be
         dropped back here, and respawning beside an enemy is a second death."""
@@ -443,7 +453,7 @@ class Builder:
         # Anything high enough to need a boost must have one within reach.
         for c in range(self.w):
             for r in range(self.rows_n):
-                if self.g[r][c] not in (BRICK, STONE) and \
+                if self.g[r][c] not in (BRICK, STONE, GEM) and \
                         self.g[r][c] not in QBLOCKS:
                     continue
                 if FLOOR - r <= MAX_JUMP_UP or (c, r) in self.no_reach:
@@ -1074,6 +1084,9 @@ def w5_1():
     b.flyer(115, FLOOR - 6, "hammer")
     b.flag(122)
     b.checkpoint(70)
+    b.gem(5, 22)
+    b.gem(5, 63)
+    b.gem(7, 108)
     return b.build()
 
 
@@ -1104,6 +1117,8 @@ def w5_2():
     b.stairs(120, 4)
     b.flag(126)
     b.checkpoint(76)
+    b.gem(6, 12)
+    b.gem(6, 104)
     return b.build()
 
 
@@ -1116,6 +1131,7 @@ def w5_2_bonus():
         b.coins(row, 4, 16)
     b.run(FLOOR - 5, 20, "BMB")
     b.exit_pipe(23, 22)
+    b.gem(7, 13)
     return b.build()
 
 
@@ -1142,6 +1158,9 @@ def w5_3():
     b.stairs(108, 3)
     b.flag(114)
     b.checkpoint(62)
+    b.gem(6, 26)
+    b.gem(6, 62)
+    b.gem(6, 100)
     return b.build()
 
 
@@ -1176,6 +1195,9 @@ def w5_4():
     b.stairs(108, 3)
     b.axe(113)
     b.checkpoint(54)
+    b.gem(6, 10)
+    b.gem(5, 56)
+    b.gem(5, 88)
     return b.build()
 
 
@@ -1210,6 +1232,9 @@ def w6_1():
     b.stairs(114, 4)
     b.flag(120)
     b.checkpoint(70)
+    b.gem(5, 21)
+    b.gem(5, 63)
+    b.gem(6, 106)
     return b.build()
 
 
@@ -1244,6 +1269,8 @@ def w6_2():
     b.stairs(122, 4)
     b.flag(128)
     b.checkpoint(72)
+    b.gem(6, 12)
+    b.gem(5, 111)
     return b.build()
 
 
@@ -1256,6 +1283,7 @@ def w6_2_sky():
         b.coins(row, 4, 20)
     b.run(FLOOR - 5, 12, "BMB")
     b.exit_pipe(27, 30)
+    b.gem(5, 14)
     return b.build()
 
 
@@ -1284,6 +1312,9 @@ def w6_3():
     b.stairs(112, 3)
     b.flag(118)
     b.checkpoint(56)
+    b.gem(5, 24)
+    b.gem(5, 60)
+    b.gem(7, 105)
     return b.build()
 
 
@@ -1317,6 +1348,9 @@ def w6_4():
     b.stairs(108, 3)
     b.axe(115)
     b.checkpoint(76)
+    b.gem(6, 10)
+    b.gem(6, 76)
+    b.gem(7, 104)
     return b.build()
 
 
@@ -1352,6 +1386,9 @@ def w7_1():
     b.stairs(114, 4)
     b.flag(120)
     b.checkpoint(62)
+    b.gem(6, 12)
+    b.gem(5, 63)
+    b.gem(5, 110)
     return b.build()
 
 
@@ -1379,6 +1416,9 @@ def w7_2():
     b.pipe(114, height=3)
     b.axe(120)
     b.checkpoint(61)
+    b.gem(7, 19)
+    b.gem(7, 57)
+    b.gem(7, 95)
     return b.build()
 
 
@@ -1400,6 +1440,9 @@ def w7_3():
     b.platform(FLOOR - 5, 100, 5)
     b.flag(116)
     b.checkpoint(60)
+    b.gem(5, 20)
+    b.gem(5, 61)
+    b.gem(5, 103)
     return b.build()
 
 
@@ -1436,6 +1479,9 @@ def w7_4():
     b.stairs(116, 3)
     b.axe(122)
     b.checkpoint(69)
+    b.gem(6, 8)
+    b.gem(7, 54)
+    b.gem(7, 105)
     return b.build()
 
 
@@ -1478,6 +1524,9 @@ def w8_1():
     b.stairs(146, 4)
     b.flag(152)
     b.checkpoint(71)
+    b.gem(5, 32)
+    b.gem(6, 74)
+    b.gem(6, 136)
     return b.build()
 
 
@@ -1513,6 +1562,9 @@ def w8_2():
     b.flyer(133, FLOOR - 7, "hammer")
     b.flag(141)
     b.checkpoint(79)
+    b.gem(6, 12)
+    b.gem(6, 82)
+    b.gem(6, 126)
     return b.build()
 
 
@@ -1547,6 +1599,9 @@ def w8_3():
     b.stairs(128, 4)
     b.flag(134)
     b.checkpoint(72)
+    b.gem(6, 30)
+    b.gem(6, 78)
+    b.gem(7, 130)
     return b.build()
 
 
@@ -1585,6 +1640,9 @@ def w8_4():
     b.bowser(128)
     b.axe(135)
     b.checkpoint(94)
+    b.gem(6, 8)
+    b.gem(7, 54)
+    b.gem(7, 113)
     return b.build()
 
 
