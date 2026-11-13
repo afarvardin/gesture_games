@@ -1690,6 +1690,10 @@ class Game:
                 duck = True
 
             self.update(analog, run_flag, duck, dt, now)
+            if self.tracker:
+                # Between lives, levels and pipes a tracking hitch costs nothing,
+                # so that is when the tracker swaps out its leaking GPU detector.
+                self.tracker.game_quiet = self.state != "play"
             self.draw(snap, now)
 
         if self.tracker:

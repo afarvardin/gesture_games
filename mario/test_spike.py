@@ -459,6 +459,52 @@ if model:
               if lt.lat_infer else "")
         lt.close()
 
+print("\n[8b] the leaking GPU detector is swapped out, at a quiet moment if it can be")
+# MediaPipe 0.10.14 leaks ~2.4 MB of GPU memory per frame on macOS and aborts the
+# process when it runs out. These use fake detectors: the policy is what matters.
+class FakeDet:
+    made = 0
+    def __init__(self):
+        FakeDet.made += 1
+        self.closed = False
+    def close(self):
+        self.closed = True
+class Recycler(Bare):
+    def _create_detector(self, delegate, callback=None):
+        return FakeDet()
+def run_frames(rt, n, hands=True):
+    for _ in range(n):
+        if hands:
+            rt._hands_seen_t = time.perf_counter()
+        rt._maybe_recycle()
+        if rt._spare_building:                 # let the builder thread finish
+            for _ in range(200):
+                if not rt._spare_building:
+                    break
+                time.sleep(0.005)
+rt = Recycler()
+rt.use_gpu, rt._detector = True, FakeDet()
+first = rt._detector
+run_frames(rt, S.GPU_RECYCLE_SOFT + 20)
+check("hands in view and the game in play: no swap before the hard limit",
+      rt.recycles == 0, f"{rt.recycles}")
+rt.game_quiet = True
+run_frames(rt, 3)
+check("once the game goes quiet, the due swap happens", rt.recycles == 1)
+for _ in range(100):
+    if first.closed:
+        break
+    time.sleep(0.01)
+check("and the old detector is closed (that frees the leak)", first.closed)
+rt.game_quiet = False
+run_frames(rt, S.GPU_RECYCLE_HARD + 5)
+check("with no quiet moment, the hard limit forces a swap", rt.recycles == 2,
+      f"{rt.recycles}")
+rt2 = Recycler()
+rt2.use_gpu, rt2._detector = True, FakeDet()
+run_frames(rt2, S.GPU_RECYCLE_SOFT + 5, hands=False)
+check("no hands in view counts as quiet", rt2.recycles == 1, f"{rt2.recycles}")
+
 print("\n[9] pygame UI construction (dummy video driver)")
 try:
     sp = S.Spike()

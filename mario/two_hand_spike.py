@@ -79,6 +79,23 @@ CAM_W, CAM_H = 640, 480
 # detector fails, the tracker falls back to the CPU on its own; --cpu-tracking
 # forces the CPU path.
 USE_GPU = sys.platform == "darwin"
+# MediaPipe 0.10.14's GPU path on macOS leaks every frame it uploads: ~2.4 MB of
+# IOSurface per 640x480 frame, in every running mode, and gc does not help. At
+# 30 fps that is ~4 GB a minute, until CoreVideo refuses an allocation and
+# MediaPipe aborts the whole process ("Error creating pixel buffer: -6662",
+# kCVReturnAllocationFailed) -- no Python exception, the game just vanishes.
+# Closing a detector gives all of it back, so the GPU detector is regularly
+# swapped for a fresh one, built and warmed on a background thread.
+#
+# Building one is not free, though: MediaPipe holds the GIL while it creates a
+# detector (~60 ms, ~330 ms the first time), which freezes the capture and
+# result threads too -- a hitch in the controls. So a swap waits for a quiet
+# moment (no hands in view, or the game paused between lives or levels) once
+# it is due, and only forces itself through at the hard limit.
+GPU_RECYCLE_SOFT = 240            # frames (~8 s): swap at the next quiet moment
+GPU_RECYCLE_HARD = 600            # frames (~20 s, ~1.4 GB): swap regardless
+GPU_SPARE_LEAD = 30               # frames before the hard limit to start building
+QUIET_NO_HANDS = 0.3              # s with no hand in view counts as quiet
 
 PREVIEW_RECT = pygame.Rect(20, 20, 640, 480)
 PANEL_RECT = pygame.Rect(676, 20, 584, 480)
@@ -415,6 +432,15 @@ class TwoHandTracker:
         self.dropped = 0
 
         self.use_gpu = USE_GPU      # cleared by _make_detector if the GPU fails
+        self._model_path = None
+        self._result_lock = threading.Lock()   # two detectors overlap at a swap
+        self._frames_on_detector = 0
+        self._spare = None          # the next detector, built ahead of a swap
+        self._spare_building = False
+        self._last_frame = None     # the latest camera frame, to warm a spare on
+        self._hands_seen_t = 0.0    # last capture time any hand was in view
+        self.game_quiet = False     # set by the game when a hitch would not matter
+        self.recycles = 0
         self._open_camera(camera_id)
         self._detector = self._make_detector()
         self._thread = None
@@ -470,19 +496,8 @@ class TwoHandTracker:
             print("[Model] ERROR: hand_landmarker.task not found in", MODEL_CANDIDATES)
             return None
 
-        def create(delegate):
-            options = mp.tasks.vision.HandLandmarkerOptions(
-                base_options=mp.tasks.BaseOptions(model_asset_path=model_path,
-                                                  delegate=delegate),
-                num_hands=2,
-                running_mode=mp.tasks.vision.RunningMode.LIVE_STREAM,
-                result_callback=self._on_result,
-                min_hand_detection_confidence=0.5,
-                min_hand_presence_confidence=0.5,
-                min_tracking_confidence=0.5,
-            )
-            return mp.tasks.vision.HandLandmarker.create_from_options(options)
-
+        self._model_path = model_path
+        create = self._create_detector
         Delegate = mp.tasks.BaseOptions.Delegate
         if self.use_gpu:
             try:
@@ -494,6 +509,83 @@ class TwoHandTracker:
                 self.use_gpu = False
         print(f"[Model] {model_path} (LIVE_STREAM, num_hands=2, CPU)")
         return create(Delegate.CPU)
+
+    def _create_detector(self, delegate, callback=None):
+        options = mp.tasks.vision.HandLandmarkerOptions(
+            base_options=mp.tasks.BaseOptions(model_asset_path=self._model_path,
+                                              delegate=delegate),
+            num_hands=2,
+            running_mode=mp.tasks.vision.RunningMode.LIVE_STREAM,
+            result_callback=callback or self._on_result_serial,
+            min_hand_detection_confidence=0.5,
+            min_hand_presence_confidence=0.5,
+            min_tracking_confidence=0.5,
+        )
+        return mp.tasks.vision.HandLandmarker.create_from_options(options)
+
+    def _on_result_serial(self, result, output_image, timestamp_ms):
+        # At a swap the old detector can still be finishing a frame while the
+        # new one returns its first; the gesture state is not built for both.
+        with self._result_lock:
+            self._on_result(result, output_image, timestamp_ms)
+
+    # ---------- GPU leak workaround (see GPU_RECYCLE_FRAMES) ----------
+    def _build_spare(self):
+        """Background thread: build the next detector and warm it up. If the GPU
+        will not give us another one, fall back to the CPU rather than leak on.
+
+        A fresh GPU detector spends ~150 ms on its first frame setting up its
+        kernels; swapped in cold, that is a stutter in the controls every ten
+        seconds. So it first runs the latest real camera frame -- hands and all,
+        so both models warm -- and only becomes the spare once that is back."""
+        Delegate = mp.tasks.BaseOptions.Delegate
+        warmed = threading.Event()
+        warm_ts = [None]
+
+        def callback(result, output_image, timestamp_ms):
+            if timestamp_ms == warm_ts[0] and not warmed.is_set():
+                warmed.set()                  # the warm-up frame: not a real one
+                return
+            self._on_result_serial(result, output_image, timestamp_ms)
+
+        try:
+            detector = self._create_detector(Delegate.GPU, callback)
+            frame = self._last_frame
+            if frame is not None:
+                # Below every real timestamp this detector will be given: the
+                # capture thread only ever sends it larger ones after the swap.
+                warm_ts[0] = max(0, self._last_ts_ms)
+                detector.detect_async(self._mp_image(frame), warm_ts[0])
+                warmed.wait(timeout=2.0)
+            self._spare = (detector, True)
+        except Exception as e:
+            print(f"[Model] no fresh GPU detector ({e}); switching to the CPU")
+            try:
+                self._spare = (self._create_detector(Delegate.CPU), False)
+            except Exception as e2:
+                print(f"[Model] no CPU detector either ({e2})")
+        finally:
+            self._spare_building = False
+
+    def _maybe_recycle(self):
+        """Capture thread, after each GPU frame: swap in a fresh detector."""
+        self._frames_on_detector += 1
+        n = self._frames_on_detector
+        quiet = self.game_quiet or \
+            time.perf_counter() - self._hands_seen_t > QUIET_NO_HANDS
+        due = (n >= GPU_RECYCLE_HARD - GPU_SPARE_LEAD
+               or (n >= GPU_RECYCLE_SOFT and quiet))
+        if due and self._spare is None and not self._spare_building:
+            self._spare_building = True
+            threading.Thread(target=self._build_spare, daemon=True).start()
+        if self._spare is not None:
+            old = self._detector
+            self._detector, gpu = self._spare
+            self._spare = None
+            self._frames_on_detector = 0
+            self.use_gpu = gpu          # the next frame is built for the new one
+            self.recycles += 1
+            threading.Thread(target=old.close, daemon=True).start()
 
     def _mp_image(self, frame):
         """BGR camera frame -> the image the detector takes. The GPU path only
@@ -519,6 +611,7 @@ class TwoHandTracker:
 
             frame = cv2.flip(frame, 1)   # mirror, so moving right moves right
             mp_image = self._mp_image(frame)
+            self._last_frame = frame
 
             ts_ms = int((t_capture - self._t0) * 1000)
             if ts_ms <= self._last_ts_ms:
@@ -534,6 +627,8 @@ class TwoHandTracker:
                         self.dropped += 1
 
             self._detector.detect_async(mp_image, ts_ms)
+            if self.use_gpu:
+                self._maybe_recycle()
 
     # ---------- detector thread ----------
     def _on_result(self, result, output_image, timestamp_ms):
@@ -547,6 +642,8 @@ class TwoHandTracker:
 
         hands = self._assign_roles(result.hand_landmarks or [],
                                    result.handedness or [], w, h, t_capture)
+        if result.hand_landmarks:
+            self._hands_seen_t = t_capture
 
         if self._request_calibrate:
             # Re-learn through the same stability + clamp path as a cold start,
@@ -1415,6 +1512,8 @@ class TwoHandTracker:
             self._thread.join(timeout=1.0)
         if self._detector is not None:
             self._detector.close()
+        if self._spare is not None:
+            self._spare[0].close()
         if self.cap is not None:
             self.cap.release()
 

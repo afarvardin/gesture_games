@@ -98,6 +98,20 @@ and a three-channel frame aborts the process from inside MediaPipe, so every fra
 goes through `TwoHandTracker._mp_image`. If the GPU detector cannot be created,
 the tracker falls back to the CPU and says so at startup (`[Model] ... CPU`).
 
+**MediaPipe 0.10.14's GPU path leaks.** Every frame it uploads leaves about 2.4 MB
+of GPU memory (IOSurface) behind, in every running mode, and garbage collection
+does not help. At 30 fps that is roughly 4 GB a minute, until macOS refuses an
+allocation and MediaPipe aborts the whole process with `Error creating pixel
+buffer: -6662` (`kCVReturnAllocationFailed`). There is no Python exception; the game
+just stops. Closing a detector gives all of the memory back, so the tracker swaps
+in a fresh one regularly. It builds and warms the new one on a background thread,
+then closes the old one off the capture thread. Building a detector holds the GIL
+(~60ms), which stalls tracking. So once a swap is due (`GPU_RECYCLE_SOFT`, ~8 s)
+it waits for a quiet moment: no hands in view, or the game between lives, levels or
+pipes. It only forces itself through at `GPU_RECYCLE_HARD` (~20 s, ~1.4 GB). If a
+fresh GPU detector cannot be built, the tracker drops to the CPU rather than keep
+leaking. `--cpu-tracking` avoids the GPU entirely.
+
 The camera preview is also rebuilt only when a new camera frame arrives (30fps)
 rather than on every draw (60fps).
 
