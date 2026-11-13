@@ -30,6 +30,14 @@ end to drop back), koopas and buzzy beetles that shell before they die, paratroo
 that lose their wings to a stomp, flagpoles, axes, and lava that ignores your
 mushroom.
 
+From World 5, some ? blocks hold other mushrooms: a **heart** (an extra life), a
+**spring** (higher jumps for 15 s), a **gold** one (8 s of smashing through enemies
+untouched; it does nothing against firebars, lava or the boss), and a **rot**
+mushroom, which is poison. It creeps out slowly, so you can jump it or burn it. Running
+powers show as a tint on the hero and a countdown under the score. World 8 adds
+**skeletons**: a stomp knocks one into a heap of bones that rattles and gets back
+up, so fire is the way to finish one. The last castle ends with the **Magma King**.
+
 ## Running and options
 
 ```bash

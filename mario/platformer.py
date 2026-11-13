@@ -128,6 +128,22 @@ FIREBAR_RATE = 1.15               # radians/second
 FIREBAR_SEG = 22                  # px between fire segments
 
 MUSHROOM_SPEED = 1.9
+# The other mushrooms (World 5 on). Rot is slow on purpose: it is a trap you are
+# meant to see coming out of the block and then jump or burn, not a coin flip.
+ITEM_SPEED = {"mushroom": MUSHROOM_SPEED, "life": 2.3, "spring": MUSHROOM_SPEED,
+              "gold": 2.1, "rot": 1.25}
+GOLD_BOUNCE = 7.0                 # px/frame; the gold one hops as it goes
+SPRING_TIME = 15.0                # s of higher jumps
+SPRING_BOOST = 1.18               # jump speed multiplier: ~1.4x the height
+GOLD_TIME = 8.0                   # s of smashing through enemies untouched
+POWER_WARN = 2.0                  # s before a power runs out that it flickers
+
+SKELETON_SPEED = 1.0              # px/frame; a shade slower than a goomba
+SKELETON_REST = 3.4               # s a stomped skeleton lies in a heap
+SKELETON_RATTLE = 0.8             # s of rattling before it stands: the warning
+SKELETON_CLEAR = 1.6 * TILE       # it will not stand up with you this close --
+                                  # rising into the player is a hit they could not
+                                  # see coming, so it waits, still rattling
 GROW_PAUSE = 0.35                 # s of freeze while growing/shrinking
 HURT_INVULN = 1.6                 # s of invulnerability after being shrunk
 BUMP_TIME = 0.18                  # s of block bump animation
@@ -327,8 +343,84 @@ MUSHROOM_PIXELS = [
     ".SSSSSS.",
     "..SSSS..",
 ]
+# The other mushrooms. Same stalk and face as the plain one so they read as
+# mushrooms at a glance; the cap is what tells you which one it is.
+LIFE_MUSH_PIXELS = [                 # a heart for a cap: an extra life
+    ".QQ..QQ.",
+    "QWQQQQQQ",
+    "QQQQQQQQ",
+    ".QQQQQQ.",
+    ".SSQQSS.",
+    ".SKSSKS.",
+    ".SSSSSS.",
+    "..SSSS..",
+]
+SPRING_MUSH_PIXELS = [               # an up-chevron on a teal cap: big jumps
+    "..JJJJ..",
+    ".JJWWJJ.",
+    "JJWJJWJJ",
+    "JWJJJJWJ",
+    ".SSSSSS.",
+    ".SKSSKS.",
+    ".SSSSSS.",
+    "..SSSS..",
+]
+GOLD_MUSH_PIXELS = [                 # a shining gold cap: untouchable
+    "..ZZZZ..",
+    ".ZWZZzZ.",
+    "ZWZZZzZZ",
+    "zZZZZZZz",
+    ".SSSSSS.",
+    ".SKSSKS.",
+    ".SSSSSS.",
+    "..SSSS..",
+]
+ROT_MUSH_PIXELS = [                  # a sickly spotted cap and a scowl: poison
+    "..VVVV..",
+    ".VyVVyV.",
+    "VVVVyVVV",
+    "VyVVVVVV",
+    ".ssssss.",
+    ".sKssKs.",
+    ".ssKKss.",
+    "..ssss..",
+]
+# Skeletons, World 8. Ten rows rather than eight: they stand a head taller than a
+# goomba, which is most of what makes them read as walking bones. Face left.
+SKELETON_A = [
+    "..DDDD..",
+    ".DDDDDD.",
+    ".DeDDeD.",
+    ".DDDDDd.",
+    "..DKDK..",
+    "...dD...",
+    ".DdDdDD.",
+    "D.dDdD.D",
+    "...dD...",
+    "..D..D..",
+]
+SKELETON_B = SKELETON_A[:8] + [
+    "...dD...",
+    "...DD...",
+]
+BONES_PIXELS = [                     # stomped: a heap that pulls itself back up
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "........",
+    "...DDD..",
+    "..DeDd..",
+    ".dDDdDD.",
+    "DDdDDdDD",
+]
 PIXEL_COLORS = {
     "R": (224, 52, 48), "S": (250, 200, 156), "T": (46, 82, 200),
+    "Q": (236, 84, 140), "J": (40, 170, 190), "Z": (250, 196, 40),
+    "z": (196, 128, 20), "V": (104, 112, 52), "y": (206, 214, 80),
+    "s": (196, 198, 176), "D": (232, 226, 206), "d": (160, 150, 130),
+    "e": (255, 110, 40),
     "K": (20, 20, 30), "E": (168, 84, 36),
     "F": (72, 40, 20), "W": (250, 250, 250), "G": (60, 180, 70),
     "Y": (240, 210, 90), "M": (228, 60, 50), "O": (250, 170, 60),
@@ -669,11 +761,13 @@ class Hammer:
 
 
 class Mushroom:
+    """Any mushroom: kind is "mushroom" (grow), "life", "spring", "gold" or "rot"."""
     W = H = 30
 
-    def __init__(self, x, y):
+    def __init__(self, x, y, kind="mushroom"):
         self.x, self.y = float(x), float(y)
-        self.vx, self.vy = MUSHROOM_SPEED, 0.0
+        self.kind = kind
+        self.vx, self.vy = ITEM_SPEED.get(kind, MUSHROOM_SPEED), 0.0
         self.alive = True
         self.emerging = 0.45          # s rising out of the block
 
@@ -695,7 +789,7 @@ class Mushroom:
         r = self.rect()
         if level.solid_at(r.centerx, r.bottom):
             self.y = (r.bottom // TILE) * TILE
-            self.vy = 0.0
+            self.vy = -GOLD_BOUNCE if self.kind == "gold" else 0.0
         if self.y > level.ph + 120:
             self.alive = False
 
@@ -739,9 +833,14 @@ class Enemy:
         self.breath_at = self.timer + 1.1        # offset, so hop and breath differ
         self.landed_at = -9.0                    # for the boss's landing squash
         self.hurt_until = 0.0                    # and his hit flash
+        self.collapsed = False                   # a skeleton, knocked into a heap
+        self.rise_at = 0.0                       # and when it gets back up
+        if kind == "skeleton":
+            self.H = 40                          # a head taller than a goomba
         speed = {"goomba": ENEMY_SPEED, "koopa": KOOPA_SPEED,
                  "buzzy": ENEMY_SPEED, "cheep": CHEEP_SPEED,
-                 "spiny": ENEMY_SPEED * 1.2}.get(kind, 0.0)
+                 "spiny": ENEMY_SPEED * 1.2,
+                 "skeleton": SKELETON_SPEED}.get(kind, 0.0)
         self.vx = -speed
         self.home_x = float(x)
         self.lift_dir = 1
@@ -756,7 +855,8 @@ class Enemy:
         # A spiny has spikes on its back: fire is the only way past it, which is the
         # mirror image of the buzzy beetle shrugging off fire.
         return self.kind in ("goomba", "koopa", "cheep", "buzzy", "para", "hammer",
-                             "bullet")   # not spiny (spikes), not bowser (armoured)
+                             "bullet", "skeleton")   # not spiny (spikes), not
+                                                     # bowser (armoured)
 
     @property
     def fireproof(self):
@@ -778,8 +878,9 @@ class Enemy:
         # A stomped shell just sits there. In the original you kick it, and it
         # comes back and kills you -- at 7px/frame it overtakes a walking player
         # from behind with no warning, which is a miserable way to lose a life.
-        # Here a shell is scenery until you stomp it again.
-        return self.is_platform or self.submerged or self.shell
+        # Here a shell is scenery until you stomp it again. A heap of bones is
+        # scenery too, until it stands back up.
+        return self.is_platform or self.submerged or self.shell or self.collapsed
 
     def platform_rect(self):
         return pygame.Rect(int(self.x), int(self.y), self.width * TILE, 12)
@@ -855,6 +956,17 @@ class Enemy:
                     not level.solid_at(ahead, self.y + 4):
                 self.vx = -self.vx
                 self.x += self.vx * 2
+            return
+
+        if self.kind == "skeleton" and self.collapsed:
+            if now < self.rise_at:
+                return
+            if abs(self.target_x - self.x) < SKELETON_CLEAR:
+                self.rise_at = now + 0.2          # wait for room, still rattling
+                return
+            self.collapsed = False
+            # Up, and after whoever knocked it down.
+            self.vx = math.copysign(SKELETON_SPEED, self.target_x - self.x)
             return
 
         if self.kind == "bowser":
@@ -951,8 +1063,13 @@ class Enemy:
             self.vx = -self.vx
             self.x += self.vx * 2
 
-    def stomped(self):
+    def stomped(self, now=0.0):
         """Returns True if the stomp killed it outright."""
+        if self.kind == "skeleton":
+            # Bones do not stay down. Only fire finishes one.
+            self.collapsed = True
+            self.rise_at = now + SKELETON_REST
+            return False
         if self.kind == "para":
             self.kind = "koopa"           # wings off, now an ordinary koopa
             self.vx = -KOOPA_SPEED
@@ -997,6 +1114,8 @@ class Hero:
         self.pipe_until = 0.0
         if not keep_power:
             self.big = False
+            self.spring_until = 0.0       # a pipe trip keeps these, a death not
+            self.gold_until = 0.0
 
     @property
     def height(self):
@@ -1021,13 +1140,15 @@ class Hero:
             self.grounded = False
             return "STROKE"
         coyote = self.jumps_used == 0 and (now - self.last_ground_t) <= COYOTE_TIME
+        boost = SPRING_BOOST if now < self.spring_until else 1.0
         if self.grounded or coyote:
-            self.vy = -(JUMP_MIN + (JUMP_MAX - JUMP_MIN) * strength)
+            self.vy = -(JUMP_MIN + (JUMP_MAX - JUMP_MIN) * strength) * boost
             self.grounded = False
             self.jumps_used = 1
             return "JUMP"
         if self.jumps_used < 2:
-            self.vy = -(JUMP_MIN + (JUMP_MAX - JUMP_MIN) * strength) * DOUBLE_JUMP_FACTOR
+            self.vy = -(JUMP_MIN + (JUMP_MAX - JUMP_MIN) * strength) * \
+                DOUBLE_JUMP_FACTOR * boost
             self.jumps_used = 2
             return "DOUBLE"
         self.buffered_jump = (now, strength)
@@ -1094,15 +1215,12 @@ class Level:
     def hit_block(self, col, row, big):
         """Bump a block from below. Returns what came out."""
         ch = self.tile_at(col, row)
-        if ch not in (LV.QCOIN, LV.QMUSH, LV.BRICK):
+        if ch not in LV.QBLOCKS and ch != LV.BRICK:
             return None
         self.bumps[(col, row)] = BUMP_TIME
-        if ch == LV.QCOIN:
+        if ch in LV.QBLOCKS:
             self.rows[row][col] = LV.USED
-            return "coin"
-        if ch == LV.QMUSH:
-            self.rows[row][col] = LV.USED
-            return "mushroom"
+            return LV.QBLOCKS[ch]
         if big:                            # only big Mario breaks bricks
             self.rows[row][col] = LV.EMPTY
             return "break"
@@ -1170,6 +1288,15 @@ class Game:
             "hammer": build_sprite(HAMMER_BRO_PIXELS, 4),
             "spiny": build_sprite(SPINY_PIXELS, 4),
             "lakitu": build_sprite(LAKITU_PIXELS, 4),
+            "life": build_sprite(LIFE_MUSH_PIXELS, 4),
+            "spring": build_sprite(SPRING_MUSH_PIXELS, 4),
+            "gold": build_sprite(GOLD_MUSH_PIXELS, 4),
+            "rot": build_sprite(ROT_MUSH_PIXELS, 4),
+            "skel_a": build_sprite(SKELETON_A, 4),
+            "skel_b": build_sprite(SKELETON_B, 4),
+            "skel_a_r": build_sprite(SKELETON_A, 4, flip=True),
+            "skel_b_r": build_sprite(SKELETON_B, 4, flip=True),
+            "bones": build_sprite(BONES_PIXELS, 4),
         }
         self.sky_cache = {}
         self.mk_cache = {}               # boss frames, by (mouth, glow) step
@@ -1568,7 +1695,7 @@ class Game:
         self.items = [it for it in self.items if it.alive]
         spawned = []
         for e in self.enemies:
-            if e.kind == "lakitu":
+            if e.kind in ("lakitu", "skeleton"):
                 e.target_x = self.hero.x
             e.update(self.level, dt, now)
             if not getattr(e, "throw_now", False):
@@ -1613,18 +1740,57 @@ class Game:
             if self.level.bumps[key] <= 0:
                 del self.level.bumps[key]
 
+    def collect(self, item, now):
+        """What each mushroom does when you touch it."""
+        h = self.hero
+        kind = item.kind
+        if kind == "life":
+            self.lives += 1
+            self.score += 1000
+            self._toast("HEART! +1 LIFE", now)
+        elif kind == "spring":
+            h.spring_until = now + SPRING_TIME
+            self.score += 500
+            self._toast(f"SPRING! big jumps for {SPRING_TIME:.0f}s", now)
+        elif kind == "gold":
+            h.gold_until = now + GOLD_TIME
+            self.score += 500
+            self._toast(f"GOLD! smash through enemies for {GOLD_TIME:.0f}s", now)
+        elif kind == "rot":
+            if now < h.gold_until:
+                self.score += 100             # gold shrugs it off like anything else
+                self._toast("+100", now, 0.7)
+                return
+            self.hurt(now)
+            if self.state == "play":
+                self._toast("ROTTEN! -- burn those, or jump them", now)
+        elif h.grow(now):
+            self.score += 1000
+            self._toast("MUSHROOM! +1000", now)
+        else:
+            self.score += 200
+
     def collide_entities(self, now):
         h = self.hero
         hr = h.rect()
         for it in self.items:
-            if it.emerging <= 0 and hr.colliderect(it.rect()):
+            if not it.alive or it.emerging > 0:
+                continue
+            if it.kind == "rot":
+                # Fire burns a rot mushroom: the always-available answer to it.
+                for f in self.fireballs:
+                    if f.alive and f.rect().colliderect(it.rect()):
+                        f.alive = it.alive = False
+                        self.score += 100
+                        self._toast("+100", now, 0.7)
+                        break
+            if it.alive and hr.colliderect(it.rect()):
                 it.alive = False
-                if h.grow(now):
-                    self.score += 1000
-                    self._toast("MUSHROOM! +1000", now)
-                else:
-                    self.score += 200
+                self.collect(it, now)
+                if self.state != "play":
+                    return
 
+        gold = now < h.gold_until
         for e in self.enemies:
             if not e.alive or e.dying > 0 or e.harmless:
                 continue
@@ -1649,6 +1815,15 @@ class Game:
                 continue
             if not hr.colliderect(er):
                 continue
+            if gold:
+                # Untouchable: anything you can beat, you beat by walking into it.
+                # Hazards (firebars, podoboos, cannons) and the boss just do not
+                # hurt you -- gold is not a way to skip the last fight.
+                if not e.armoured and e.kind not in ("firebar", "podoboo", "cannon"):
+                    e.dying = 0.25
+                    self.score += 200
+                    self._toast("+200", now, 0.7)
+                continue
 
             # Generous stomp: either the feet are above the enemy's middle, or we
             # came down out of the air onto it at all. Walkers patrol, so an enemy
@@ -1659,13 +1834,15 @@ class Game:
             came_down = h.was_airborne and h.was_falling
             if (came_down or hr.bottom <= er.centery + 8) and e.stompable \
                     and hr.top < er.top:
-                killed = e.stomped()
+                killed = e.stomped(now)
                 h.vy = -STOMP_BOUNCE
                 h.jumps_used = min(h.jumps_used, 1)
                 self.score += 100
                 self._toast("+100", now, 0.7)
                 if not killed:
-                    self._toast("shell!", now, 0.7)
+                    self._toast("bones! burn it, or it gets back up" if
+                                e.kind == "skeleton" else "shell!", now,
+                                1.4 if e.kind == "skeleton" else 0.7)
             else:
                 self.hurt(now)
                 return
@@ -1673,7 +1850,7 @@ class Game:
     def hurt(self, now):
         """Big Mario shrinks; small Mario dies."""
         h = self.hero
-        if now < h.invuln_until:
+        if now < h.invuln_until or now < h.gold_until:
             return
         if h.big:
             h.shrink(now)
@@ -1770,9 +1947,13 @@ class Game:
                 self.score += 50
                 self.coins_taken += 1
                 self._toast("+50", now, 0.6)
-            elif what == "mushroom":
-                self.items.append(Mushroom(col * TILE + 5, row * TILE + TILE))
-                self._toast("a mushroom!", now)
+            elif what in ITEM_SPEED:
+                self.items.append(Mushroom(col * TILE + 5, row * TILE + TILE, what))
+                self._toast({"mushroom": "a mushroom!",
+                             "life": "a heart mushroom!",
+                             "spring": "a spring mushroom!",
+                             "gold": "a GOLD mushroom!",
+                             "rot": "uh oh -- a rotten one. burn it!"}[what], now)
             elif what == "break":
                 self.score += 50
             if what:
@@ -1871,7 +2052,7 @@ class Game:
         elif ch == LV.STONE:
             pygame.draw.rect(s, th["stone"], (x, y, TILE, TILE))
             pygame.draw.rect(s, th["brick_line"], (x, y, TILE, TILE), 2)
-        elif ch in (LV.QCOIN, LV.QMUSH):
+        elif ch in LV.QBLOCKS:
             pulse = 0.5 + 0.5 * math.sin(now * 5 + c)
             col = tuple(int(v * (0.8 + 0.2 * pulse)) for v in th["block"])
             pygame.draw.rect(s, col, (x, y, TILE, TILE))
@@ -2019,11 +2200,31 @@ class Game:
                              (body_cx - bw / 2, top, round(bw * bar), 7))
             pygame.draw.rect(self.screen, MK_INK, (body_cx - bw / 2, top, bw, 7), 1)
 
+    def draw_skeleton(self, e, r, ox, now):
+        """Walking, a heap of bones, or a heap about to stand up (it rattles)."""
+        if e.dying > 0 or e.collapsed:
+            spr = self.spr["bones"]
+            shake = 0
+            if e.collapsed and e.rise_at - now < SKELETON_RATTLE:
+                shake = (-2, 2)[int(now * 24) % 2]
+            if e.dying > 0:                      # burned: the heap sinks away
+                spr = spr.copy()
+                spr.set_alpha(int(255 * e.dying / 0.25))
+            self.screen.blit(spr, (r.x - ox + shake, r.bottom + HUD_H - spr.get_height()))
+            return
+        step = "a" if int(e.x / 12) % 2 == 0 else "b"
+        key = f"skel_{step}" + ("_r" if e.vx > 0 else "")
+        self.screen.blit(self.spr[key], (r.x - ox, r.y + HUD_H))
+
     def draw_entities(self, ox, now):
         s = self.screen
         for it in self.items:
             r = it.rect()
-            s.blit(self.spr["mushroom"], (r.x - ox, r.y + HUD_H))
+            s.blit(self.spr.get(it.kind, self.spr["mushroom"]), (r.x - ox, r.y + HUD_H))
+            if it.kind == "gold" and int(now * 6) % 3 == 0:     # a glint
+                gx, gy = r.x - ox + 6 + int(now * 40) % 18, r.y + HUD_H + 4
+                pygame.draw.line(s, (255, 255, 230), (gx - 3, gy), (gx + 3, gy))
+                pygame.draw.line(s, (255, 255, 230), (gx, gy - 3), (gx, gy + 3))
         for e in self.enemies:
             r = e.rect()
             # The boss is drawn well past his hitbox, so he gets a wider margin
@@ -2034,6 +2235,8 @@ class Game:
             if e.kind == "bowser":
                 self.draw_magma_king(e, ox, now)     # he flashes out, not flattens
                 continue
+            if e.kind == "skeleton":
+                self.draw_skeleton(e, r, ox, now)
                 continue
             if e.dying > 0:
                 pygame.draw.ellipse(s, (150, 80, 40),
@@ -2105,6 +2308,19 @@ class Game:
         if h.ducking:
             spr = pygame.transform.scale(
                 spr, (spr.get_width(), max(8, int(spr.get_height() * 0.62))))
+        # Powers show on the hero: a gold shimmer, or a teal tint for spring. Both
+        # flicker for their last couple of seconds, so running out is never a
+        # surprise.
+        for until, tint, shimmer in ((h.gold_until, (150, 110, 0), True),
+                                     (h.spring_until, (0, 60, 70), False)):
+            left = until - now
+            if left > 0 and (left > POWER_WARN or int(now * 8) % 2 == 0):
+                if shimmer:
+                    k = 0.6 + 0.4 * math.sin(now * 14)
+                    tint = tuple(int(v * k) for v in tint)
+                spr = spr.copy()
+                spr.fill(tint, special_flags=pygame.BLEND_RGB_ADD)
+                break
         bob = int(math.sin(h.walk_phase) * 2) if (h.grounded and abs(h.vx) > 0.2) else 0
         s.blit(spr, (r.x - ox - 5, r.bottom + HUD_H - spr.get_height() + bob))
 
@@ -2138,6 +2354,17 @@ class Game:
             surf = self.font.render(txt, True, C_TEXT)
             self.screen.blit(surf, (x, 12))
             x += surf.get_width() + 26
+        # Running powers, on a second line under the score.
+        x = 18
+        h = self.hero
+        for name, until, col in (("SPRING", h.spring_until, (90, 220, 235)),
+                                 ("GOLD", h.gold_until, (255, 205, 60))):
+            left = until - now
+            if left <= 0:
+                continue
+            surf = self.small.render(f"{name} {left:4.1f}s", True, col)
+            self.screen.blit(surf, (x, 40))
+            x += surf.get_width() + 22
 
         if self.tracker and snap:
             bx = WIDTH - CAM_PREVIEW[0] - 18

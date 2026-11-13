@@ -27,6 +27,12 @@ STONE = "X"               # unbreakable block
 BRICK = "B"               # breakable when big
 QCOIN = "?"               # ? block holding a coin
 QMUSH = "M"               # ? block holding a mushroom
+# The other mushrooms, from World 5 on. Their blocks look like any other ? block:
+# what comes out is the surprise, and the rot mushroom is slow enough to dodge.
+QLIFE = "h"               # heart mushroom: an extra life
+QSPRING = "j"             # spring mushroom: higher jumps for a while
+QGOLD = "g"               # gold mushroom: a few seconds of being untouchable
+QROT = "r"                # rot mushroom: poison -- jump it or burn it
 USED = "U"                # a block that has been hit
 PIPE = "P"                # pipe body (solid)
 PIPE_IN = "D"             # pipe mouth you can enter by ducking on it
@@ -45,7 +51,12 @@ CANNON = "c"              # Bullet Bill cannon: solid, and it fires
 VINE = "v"                # beanstalk: touch it to be carried to a sky area
 LOOP = "@"                # 4-4's maze trigger: cross it low and you go back
 
-SOLID = frozenset({GROUND, STONE, BRICK, QCOIN, QMUSH, USED, PIPE, PIPE_IN,
+# What each kind of ? block gives up when it is bumped.
+QBLOCKS = {QCOIN: "coin", QMUSH: "mushroom", QLIFE: "life", QSPRING: "spring",
+           QGOLD: "gold", QROT: "rot"}
+
+SOLID = frozenset({GROUND, STONE, BRICK, QCOIN, QMUSH, QLIFE, QSPRING, QGOLD,
+                   QROT, USED, PIPE, PIPE_IN,
                    BRIDGE, EXIT, CANNON})
 DEADLY = frozenset({LAVA})
 
@@ -401,7 +412,8 @@ class Builder:
         # Anything high enough to need a boost must have one within reach.
         for c in range(self.w):
             for r in range(self.rows_n):
-                if self.g[r][c] not in (BRICK, QCOIN, QMUSH, STONE):
+                if self.g[r][c] not in (BRICK, STONE) and \
+                        self.g[r][c] not in QBLOCKS:
                     continue
                 if FLOOR - r <= MAX_JUMP_UP or (c, r) in self.no_reach:
                     continue               # reachable off the floor, or a hazard mount
@@ -1022,7 +1034,7 @@ def w5_1():
     b.platform(FLOOR - 5, 62, 5)
     b.cannon(84, height=3)
     b.enemy(88, "koopa")
-    b.run(FLOOR - 4, 90, "?B?")
+    b.run(FLOOR - 4, 90, "hB?")
     b.platform(FLOOR - 3, 108, 5, kind=BRICK)
     b.flyer(109, FLOOR - 4, "hammer")
     b.platform(FLOOR - 5, 114, 4, kind=BRICK)
@@ -1052,7 +1064,7 @@ def w5_2():
     b.lift(80, FLOOR - 6, "lift_v", span=4, width=3)
     b.coins(FLOOR - 9, 80, 3)
     b.enemy(84, "buzzy")
-    b.run(FLOOR - 4, 100, "BB?BB")
+    b.run(FLOOR - 4, 100, "BBjBB")
     b.enemy(106, "koopa")
     b.cannon(108, height=2)
     b.stairs(120, 4)
@@ -1142,7 +1154,7 @@ def w6_1():
     b.start(3)
     b.enemy(10, "buzzy")
     b.stairs(14, 3)
-    b.run(FLOOR - 5, 18, "BB?BB")
+    b.run(FLOOR - 5, 18, "BBjBB")
     b.enemy(38, "koopa")
     b.stairs(34, 3, descend=True)
     b.platform(FLOOR - 3, 40, 6, kind=STONE)
@@ -1156,7 +1168,7 @@ def w6_1():
     b.coins(FLOOR - 4, 84, 6)
     b.cannon(92, height=3)
     b.enemy(110, "buzzy")
-    b.run(FLOOR - 4, 106, "?B?")
+    b.run(FLOOR - 4, 106, "rB?")
     b.stairs(114, 4)
     b.flag(120)
     return b.build()
@@ -1179,7 +1191,7 @@ def w6_2():
     b.pipe(46, height=3)
     b.enemy(64, "buzzy")
     b.platform(FLOOR - 5, 62, 6)
-    b.run(FLOOR - 8, 66, "?B?")
+    b.run(FLOOR - 8, 66, "hB?")
     b.pipe(70, height=2)
     b.enemy(88, "koopa")
     b.enemy(89, "goomba")
@@ -1289,7 +1301,7 @@ def w7_1():
     b.enemy(68, "koopa")
     b.cannon(72, height=2)
     b.lakitu(86)
-    b.run(FLOOR - 4, 88, "?B?")
+    b.run(FLOOR - 4, 88, "?Bg")
     b.enemy(92, "goomba")
     b.cannon(96, height=2)
     b.run(FLOOR - 5, 110, "BBB")
@@ -1332,11 +1344,11 @@ def w7_3():
     b.start(3)
     for col in (12, 22, 32, 44, 54, 66, 76, 88, 98, 110):
         b.swimmer(col, ROWS - 1, kind="leaper")
-    b.run(FLOOR - 5, 16, "BB?BB")
+    b.run(FLOOR - 5, 16, "BBjBB")
     b.coins(FLOOR - 6, 16, 5)
     b.run(FLOOR - 5, 38, "BMB")
     b.platform(FLOOR - 5, 58, 5)
-    b.run(FLOOR - 5, 80, "BB?BB")
+    b.run(FLOOR - 5, 80, "BBrBB")
     b.coins(FLOOR - 6, 80, 5)
     b.platform(FLOOR - 5, 100, 5)
     b.flag(116)
@@ -1382,7 +1394,10 @@ def w7_4():
 # and a castle that ends with Bowser.
 # ===========================================================================
 def w8_1():
-    """The long one. Cannons, buzzy beetles and wide open ground to cross."""
+    """The long one. Cannons, buzzy beetles and wide open ground to cross.
+
+    World 8 is where the skeletons are: a stomp only knocks one into a heap of
+    bones that pulls itself back together, so fire is the way to finish one."""
     b = Builder(160, THEME_OVERWORLD, "8-1")
     b.floor()
     for a in (26, 46, 66, 86, 108, 130):
@@ -1398,12 +1413,14 @@ def w8_1():
     b.enemy(56, "buzzy")
     b.platform(FLOOR - 5, 54, 6)
     b.cannon(60, height=2)
+    b.enemy(62, "skeleton")
     b.enemy(76, "koopa")
-    b.run(FLOOR - 4, 72, "?B?")
+    b.run(FLOOR - 4, 72, "rB?")
     b.cannon(80, height=3)
     b.enemy(98, "buzzy")
     b.stairs(94, 3)
-    b.run(FLOOR - 5, 98, "BB?BB")
+    b.run(FLOOR - 5, 98, "BBgBB")
+    b.enemy(118, "skeleton")
     b.cannon(120, height=2)
     b.enemy(124, "koopa")
     b.enemy(140, "buzzy")
@@ -1422,6 +1439,7 @@ def w8_2():
     b.start(3)
     b.enemy(12, "koopa")
     b.run(FLOOR - 4, 8, "BB?BB")
+    b.enemy(16, "skeleton")
     b.cannon(20, height=2)
     b.cannon(24, height=3)
     b.enemy(42, "buzzy")
@@ -1431,8 +1449,9 @@ def w8_2():
     b.coins(FLOOR - 6, 60, 6)
     b.enemy(66, "koopa")
     b.cannon(68, height=3)
+    b.enemy(84, "skeleton")
     b.enemy(86, "buzzy")
-    b.run(FLOOR - 4, 82, "?B?")
+    b.run(FLOOR - 4, 82, "?Bh")
     b.cannon(90, height=2)
     b.enemy(110, "koopa")
     b.stairs(106, 3)
@@ -1451,7 +1470,7 @@ def w8_3():
     b.floor()
     b.start(3)
     b.enemy(12, "koopa")
-    b.run(FLOOR - 4, 8, "BB?BB")
+    b.run(FLOOR - 4, 8, "BBjBB")
     # Three pairs, not four, and spaced further apart. With eight bros there was
     # nearly always a hammer in flight somewhere in the cluster, and a walking
     # player could never find a gap to move into.
@@ -1467,7 +1486,10 @@ def w8_3():
         b.platform(FLOOR - 6, col + 6, 3, kind=BRICK)
         b.flyer(col + 7, FLOOR - 7, "hammer")
     b.enemy(54, "buzzy")
+    b.enemy(60, "skeleton")
+    b.enemy(66, "skeleton")
     b.enemy(102, "koopa")
+    b.enemy(110, "skeleton")
     b.cannon(120, height=2)
     b.enemy(124, "koopa")
     b.stairs(128, 4)
@@ -1486,7 +1508,7 @@ def w8_4():
     b.run(FLOOR - 4, 8, "XXX")
     b.firebar(12, FLOOR - 5, length=4)
     b.podoboo(17)
-    b.enemy(26)
+    b.enemy(26, "skeleton")
     b.firebar(28, FLOOR - 6, length=5)
     b.podoboo(33)
     b.ramp_to(40, FLOOR - 3)
@@ -1495,6 +1517,7 @@ def w8_4():
     b.gate(52, FLOOR - 3)
     b.firebar(60, FLOOR - 5, length=4)
     b.enemy(66)
+    b.enemy(72, "skeleton")
     b.podoboo(77)
     b.firebar(82, FLOOR - 6, length=5)
     b.ramp_to(100, FLOOR - 3)
@@ -1503,6 +1526,7 @@ def w8_4():
     b.coins(FLOOR - 4, 100, 14)
     b.gate(110, FLOOR - 3)
     b.podoboo(89)
+    b.enemy(116, "skeleton")
     b.firebar(118, FLOOR - 5, length=4)
     b.bowser(128)
     b.axe(135)

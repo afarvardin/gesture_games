@@ -501,6 +501,125 @@ for state in ("won", "gameover", "dead", "play"):
         fine = False
     check(f"the '{state}' screen still draws", fine)
 
+print("\n[12] World 8 skeletons: stomped they fall apart and get back up")
+w8 = [k for l in (1, 2, 3, 4) for _, _, k in LV.load(8, l)["enemies"]]
+check("World 8 has skeletons", w8.count("skeleton") >= 6, f"{w8.count('skeleton')}")
+check("and no other world does",
+      not any(k == "skeleton" for w in range(1, 8) for l in (1, 2, 3, 4)
+              for _, _, k in LV.load(w, l)["enemies"]))
+
+
+def lone_skeleton(now):
+    g = new_game(8, 3)
+    sk = P.Enemy(30 * P.TILE, LV.FLOOR * P.TILE, "skeleton", now)
+    g.enemies = [sk]
+    return g, sk
+
+
+now = 7000.0
+g, sk = lone_skeleton(now)
+h = g.hero
+h.x, h.y, h.vy = sk.x, sk.y - sk.H + 6, 4.0       # feet just into its skull
+h.was_airborne = h.was_falling = True
+h.grounded = False
+lives = g.lives
+g.collide_entities(now)
+check("a stomp knocks it into a heap", sk.collapsed and sk.alive and g.lives == lives)
+check("a heap is harmless", sk.harmless)
+h.x = sk.x - 8 * P.TILE                    # step well clear
+for _ in range(int((P.SKELETON_REST - 0.5) * P.FPS)):
+    now += DT
+    sk.target_x = h.x
+    sk.update(g.level, DT, now)
+check("it stays down for a while", sk.collapsed)
+for _ in range(int(1.0 * P.FPS)):
+    now += DT
+    sk.target_x = h.x
+    sk.update(g.level, DT, now)
+check("then pulls itself back together", not sk.collapsed and sk.alive)
+check("and comes after you", sk.vx < 0, f"vx={sk.vx}")
+
+g, sk = lone_skeleton(now)
+sk.stomped(now)
+for _ in range(int((P.SKELETON_REST + 2.0) * P.FPS)):
+    now += DT
+    sk.target_x = sk.x + 10                # player standing right on top of it
+    sk.update(g.level, DT, now)
+check("it will not stand up into a player standing next to it", sk.collapsed)
+
+g, sk = lone_skeleton(now)
+g.fireballs.append(P.Fireball(sk.x + 16, sk.y - 16, 0.0, now))
+g.collide_entities(now)
+check("fire finishes one for good", sk.dying > 0)
+
+print("\n[13] the other mushrooms, from World 5 on")
+counts = {}
+for w in range(1, len(LV.WORLDS) + 1):
+    for l in (1, 2, 3, 4):
+        rows = "".join(LV.load(w, l)["rows"])
+        for ch in (LV.QLIFE, LV.QSPRING, LV.QGOLD, LV.QROT):
+            if ch in rows:
+                counts.setdefault(LV.QBLOCKS[ch], []).append((w, l))
+for kind in ("life", "spring", "gold", "rot"):
+    where = counts.get(kind, [])
+    check(f"{kind} mushrooms are in the game", len(where) >= 2, str(where))
+    check(f"{kind} mushrooms only appear from World 5 on",
+          all(w >= 5 for w, _ in where), str(where))
+
+
+def touch(kind, now, **hero):
+    g = new_game(5, 1)
+    g.enemies = []
+    for k, v in hero.items():
+        setattr(g.hero, k, v)
+    it = P.Mushroom(g.hero.x + 4, g.hero.y, kind)
+    it.emerging = 0.0
+    g.items = [it]
+    g.collide_entities(now)
+    return g
+
+
+now = 7500.0
+g = touch("life", now)
+check("a heart mushroom is an extra life", g.lives == P.START_LIVES + 1, f"{g.lives}")
+g = touch("rot", now, big=True)
+check("a rot mushroom hurts: big shrinks", not g.hero.big and g.lives == P.START_LIVES)
+g = touch("rot", now, big=False)
+check("and small dies", g.lives == P.START_LIVES - 1)
+g = touch("gold", now, big=False)
+check("gold makes you untouchable for a while", g.hero.gold_until - now == P.GOLD_TIME)
+e = P.Enemy(g.hero.x, g.hero.y, "goomba", now)
+g.enemies = [e]
+g.collide_entities(now + 1)
+check("and enemies you walk into are smashed",
+      e.dying > 0 and g.lives == P.START_LIVES and g.state == "play")
+g = touch("spring", now)
+h = g.hero
+h.grounded, h.jumps_used = True, 0
+h.request_jump(0.45, now + 1)
+sprung = -h.vy
+h.spring_until = 0.0
+h.grounded, h.jumps_used = True, 0
+h.request_jump(0.45, now + 1)
+check("a spring mushroom makes the same flick jump higher", sprung > -h.vy * 1.1,
+      f"{sprung:.1f} vs {-h.vy:.1f} px/frame")
+
+g = new_game(5, 1)
+g.enemies = []
+it = P.Mushroom(g.hero.x + 8 * P.TILE, g.hero.y, "rot")
+it.emerging = 0.0
+g.items = [it]
+g.fireballs.append(P.Fireball(it.x + 10, it.y - 12, 0.0, now))
+g.collide_entities(now)
+check("fire burns a rot mushroom", not it.alive and g.lives == P.START_LIVES)
+
+g = new_game(5, 1)
+qc = next(((c, r) for r, row in enumerate(g.level.rows)
+           for c, ch in enumerate(row) if ch == LV.QLIFE), None)
+check("5-1 has a heart block", qc is not None)
+if qc:
+    check("it gives up a heart mushroom", g.level.hit_block(qc[0], qc[1], False) == "life")
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:
