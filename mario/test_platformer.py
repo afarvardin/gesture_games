@@ -644,6 +644,23 @@ except Exception:
     ok = False
 check("the title card draws", ok and g.title_at == 8000.0)
 
+print("\n[15] checkpoints: die past one and you come back there")
+for w, l in LATE:
+    check(f"{w}-{l} has a checkpoint", LV.load(w, l)["checkpoints"])
+g = new_game(5, 1)
+cp = g.level.checkpoints[0]
+now = 8100.0
+g.hero.x = (cp + 1) * P.TILE
+g.update(0.0, False, False, DT, now)
+check("passing the banner sets it", g.checkpoint == cp, f"{g.checkpoint}")
+g.kill(now, "fell", force=True)
+now = g.state_until + 0.01
+g.update(0.0, False, False, DT, now)
+check("and a death respawns you at it", abs(g.hero.x - cp * P.TILE) < 1,
+      f"x={g.hero.x} vs {cp * P.TILE}")
+g = new_game(1, 1)
+check("World 1 has no checkpoints", not g.level.checkpoints)
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:

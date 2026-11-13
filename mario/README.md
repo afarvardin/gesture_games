@@ -44,6 +44,10 @@ level starts: **the Amber Wilds** (autumn, falling leaves, a harvest moon over
 **the Storm Coast** (rain and lightning) and **the Ashen Kingdom** (volcanoes and
 falling ash). Their castles are torchlit keeps with embers rising off the lava.
 
+Every level from World 5 on also has:
+
+- a **checkpoint banner** partway through; die past it and you come back there;
+
 ## Running and options
 
 ```bash

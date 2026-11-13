@@ -1254,6 +1254,7 @@ class Level:
         self.water_level = data["theme"] == LV.THEME_WATER
         self.ceiling = data["ceiling"]
         self.gates = list(data.get("gates", []))
+        self.checkpoints = list(data.get("checkpoints", []))
         self.bumps = {}                    # (col,row) -> seconds left of bump
         self.start = (data["start_col"] * TILE, LV.FLOOR * TILE)
 
@@ -1419,6 +1420,9 @@ class Game:
         self.level_start = time.perf_counter()
         self.return_col = None
         self.title_at = None             # set on the first frame of play
+        self.checkpoint = None           # column of the last banner passed
+        # Gems are counted across the level AND its bonus room, which is rebuilt
+        # every time you go in -- so the ones taken are remembered by position.
 
     def spawn_entities(self, now=0.0):
         self.enemies = [Enemy(c * TILE + 4, (r + 1) * TILE, kind, now)
@@ -1426,6 +1430,12 @@ class Game:
         self.fireballs = []
         self.items = []
         self.hammers = []
+
+    def respawn_point(self):
+        """The last checkpoint banner passed, or the start."""
+        if self.checkpoint is not None:
+            return (self.checkpoint * TILE, LV.FLOOR * TILE)
+        return self.main.start
 
     def enter_pipe(self, col, now):
         """Duck on a pipe mouth to travel."""
@@ -1601,9 +1611,11 @@ class Game:
                 else:
                     self.level = self.main
                     self.in_bonus = False
-                    self.hero.spawn = self.main.start
+                    self.hero.spawn = self.respawn_point()
                     self.hero.reset()
                     self.spawn_entities(now)
+                    self.cam_x = clamp(self.hero.x - WIDTH * 0.42, 0,
+                                       max(0, self.level.pw - WIDTH))
                     self.state = "play"
             return
         if self.state in ("won", "gameover", "complete"):
@@ -1698,6 +1710,15 @@ class Game:
                 self.state = "piping"
                 self._pipe_target = dest
                 return
+
+        # Checkpoint banners: pass one, and that is where a death brings you back.
+        if not self.in_bonus:
+            for col in self.level.checkpoints:
+                if (self.checkpoint is None or col > self.checkpoint) and \
+                        h.x + h.W * 0.5 >= (col + 0.5) * TILE:
+                    self.checkpoint = col
+                    self.score += 200
+                    self._toast("CHECKPOINT!", now, 1.2)
 
         self.step_world(dt, now)
         if self.state != "play":
@@ -2353,6 +2374,27 @@ class Game:
                 side = -1 if i % 2 else 1
                 pygame.draw.ellipse(s, (80, 200, 90),
                                     (x + 20 + side * 12 - 6, yy - 16, 14, 10))
+        elif ch == LV.CHECK:
+            taken = (not self.in_bonus and self.checkpoint is not None
+                     and c <= self.checkpoint)
+            pygame.draw.rect(s, (70, 70, 84), (x + 10, y + TILE - 6, 20, 6))
+            pygame.draw.rect(s, (190, 190, 205), (x + 18, y - TILE * 2 + 8, 4,
+                                                   TILE * 3 - 14))
+            pygame.draw.circle(s, (230, 230, 240), (x + 20, y - TILE * 2 + 8), 4)
+            wave = math.sin(now * 4 + c) * 3
+            cloth = (255, 150, 50) if taken else (110, 124, 150)
+            top = y - TILE * 2 + 12
+            if taken:
+                glow = pygame.Surface((90, 70), pygame.SRCALPHA)
+                pygame.draw.ellipse(glow, (255, 160, 60, 50), (0, 0, 90, 70))
+                s.blit(glow, (x - 4, top - 16))
+            pygame.draw.polygon(s, cloth, [(x + 22, top), (x + 52 + wave, top + 8),
+                                           (x + 46, top + 15), (x + 52 - wave, top + 24),
+                                           (x + 22, top + 26)])
+            pygame.draw.polygon(s, tuple(v // 2 for v in cloth),
+                                [(x + 22, top), (x + 52 + wave, top + 8),
+                                 (x + 46, top + 15), (x + 52 - wave, top + 24),
+                                 (x + 22, top + 26)], 2)
         elif ch == LV.AXE:
             pygame.draw.rect(s, (150, 110, 60), (x + 16, y + 10, 6, 28))
             pygame.draw.polygon(s, (220, 230, 240), [

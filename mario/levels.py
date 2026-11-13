@@ -50,6 +50,8 @@ STALK = "|"               # decorative mushroom-platform stalk, NOT solid --
 CANNON = "c"              # Bullet Bill cannon: solid, and it fires
 VINE = "v"                # beanstalk: touch it to be carried to a sky area
 LOOP = "@"                # 4-4's maze trigger: cross it low and you go back
+CHECK = "k"               # checkpoint banner (Worlds 5-8): die past it and you
+                          # come back here, not to the start
 
 # What each kind of ? block gives up when it is bumped.
 QBLOCKS = {QCOIN: "coin", QMUSH: "mushroom", QLIFE: "life", QSPRING: "spring",
@@ -123,6 +125,7 @@ class Builder:
         self.water_cols = set()
         self.ceiling = False
         self.weather = None         # one of WEATHERS, or the theme's own
+        self.checkpoints = []       # columns of checkpoint banners
         self.problems = []          # collected, so one run reports every mistake
         self.gates = []             # (column, row of the high road above it)
         self.no_reach = set()       # blocks exempt from the reachability rule
@@ -354,6 +357,19 @@ class Builder:
 
     def podoboo(self, col):
         self.enemies.append((col, FLOOR - 1, "podoboo"))
+    def checkpoint(self, col):
+        """A banner on open floor. It has to be somewhere calm: you will be
+        dropped back here, and respawning beside an enemy is a second death."""
+        self._assert_clear_of_gaps((col,), "checkpoint")
+        if any(self.g[r][col] not in (EMPTY, WATER) for r in range(FLOOR - 3, FLOOR)):
+            self.problems.append(f"checkpoint at {col} is not on open floor")
+        for c, _, kind in self.enemies:
+            if abs(c - col) <= 4 and kind.split(":")[0] not in (
+                    "firebar", "lakitu", "podoboo", "lift_v", "lift_h"):
+                self.problems.append(f"checkpoint at {col} is {abs(c - col)} "
+                                     f"tile(s) from a {kind}")
+        self.g[FLOOR - 1][col] = CHECK
+        self.checkpoints.append(col)
         return self
 
     def start(self, col):
@@ -402,7 +418,7 @@ class Builder:
         for c in range(self.w):
             for r in range(self.rows_n):
                 ch = self.g[r][c]
-                if ch in (PIPE, PIPE_IN, START, AXE, CASTLE, EXIT, VINE):
+                if ch in (PIPE, PIPE_IN, START, AXE, CASTLE, EXIT, VINE, CHECK):
                     below = self.g[r + 1][c] if r + 1 < self.rows_n else GROUND
                     if below not in SOLID and below != LAVA:
                         errs.append(f"'{ch}' at ({c},{r}) floats over '{below}'")
@@ -480,6 +496,7 @@ class Builder:
             "ceiling": self.ceiling,
             "gates": list(self.gates),
             "weather": self.weather,
+            "checkpoints": sorted(self.checkpoints),
         }
 
 
@@ -1056,6 +1073,7 @@ def w5_1():
     b.platform(FLOOR - 5, 114, 4, kind=BRICK)
     b.flyer(115, FLOOR - 6, "hammer")
     b.flag(122)
+    b.checkpoint(70)
     return b.build()
 
 
@@ -1085,6 +1103,7 @@ def w5_2():
     b.cannon(108, height=2)
     b.stairs(120, 4)
     b.flag(126)
+    b.checkpoint(76)
     return b.build()
 
 
@@ -1122,6 +1141,7 @@ def w5_3():
     b.enemy(104, "koopa")
     b.stairs(108, 3)
     b.flag(114)
+    b.checkpoint(62)
     return b.build()
 
 
@@ -1155,6 +1175,7 @@ def w5_4():
     b.enemy(106)
     b.stairs(108, 3)
     b.axe(113)
+    b.checkpoint(54)
     return b.build()
 
 
@@ -1188,6 +1209,7 @@ def w6_1():
     b.run(FLOOR - 4, 106, "rB?")
     b.stairs(114, 4)
     b.flag(120)
+    b.checkpoint(70)
     return b.build()
 
 
@@ -1221,6 +1243,7 @@ def w6_2():
     b.pipe(120, height=2)
     b.stairs(122, 4)
     b.flag(128)
+    b.checkpoint(72)
     return b.build()
 
 
@@ -1260,6 +1283,7 @@ def w6_3():
     b.enemy(110, "koopa")
     b.stairs(112, 3)
     b.flag(118)
+    b.checkpoint(56)
     return b.build()
 
 
@@ -1292,6 +1316,7 @@ def w6_4():
     b.firebar(100, FLOOR - 6, length=4)
     b.stairs(108, 3)
     b.axe(115)
+    b.checkpoint(76)
     return b.build()
 
 
@@ -1326,6 +1351,7 @@ def w7_1():
     b.coins(FLOOR - 6, 110, 3)
     b.stairs(114, 4)
     b.flag(120)
+    b.checkpoint(62)
     return b.build()
 
 
@@ -1352,6 +1378,7 @@ def w7_2():
     b.coins(FLOOR - 4, 92, 4)
     b.pipe(114, height=3)
     b.axe(120)
+    b.checkpoint(61)
     return b.build()
 
 
@@ -1372,6 +1399,7 @@ def w7_3():
     b.coins(FLOOR - 6, 80, 5)
     b.platform(FLOOR - 5, 100, 5)
     b.flag(116)
+    b.checkpoint(60)
     return b.build()
 
 
@@ -1407,6 +1435,7 @@ def w7_4():
     b.firebar(112, FLOOR - 5, length=4)
     b.stairs(116, 3)
     b.axe(122)
+    b.checkpoint(69)
     return b.build()
 
 
@@ -1448,6 +1477,7 @@ def w8_1():
     b.run(FLOOR - 4, 136, "BMB")
     b.stairs(146, 4)
     b.flag(152)
+    b.checkpoint(71)
     return b.build()
 
 
@@ -1482,6 +1512,7 @@ def w8_2():
     b.platform(FLOOR - 6, 132, 3, kind=BRICK)
     b.flyer(133, FLOOR - 7, "hammer")
     b.flag(141)
+    b.checkpoint(79)
     return b.build()
 
 
@@ -1515,6 +1546,7 @@ def w8_3():
     b.enemy(124, "koopa")
     b.stairs(128, 4)
     b.flag(134)
+    b.checkpoint(72)
     return b.build()
 
 
@@ -1552,6 +1584,7 @@ def w8_4():
     b.firebar(118, FLOOR - 5, length=4)
     b.bowser(128)
     b.axe(135)
+    b.checkpoint(94)
     return b.build()
 
 
