@@ -53,13 +53,14 @@ LOOP = "@"                # 4-4's maze trigger: cross it low and you go back
 CHECK = "k"               # checkpoint banner (Worlds 5-8): die past it and you
                           # come back here, not to the start
 GEM = "*"                 # ember gem (Worlds 5-8): three hidden in each level
+SPRING = "^"              # springboard (World 6): land on it to be thrown high
 
 # What each kind of ? block gives up when it is bumped.
 QBLOCKS = {QCOIN: "coin", QMUSH: "mushroom", QLIFE: "life", QSPRING: "spring",
            QGOLD: "gold", QROT: "rot"}
 
 SOLID = frozenset({GROUND, STONE, BRICK, QCOIN, QMUSH, QLIFE, QSPRING, QGOLD,
-                   QROT, USED, PIPE, PIPE_IN,
+                   QROT, USED, PIPE, PIPE_IN, SPRING,
                    BRIDGE, EXIT, CANNON})
 DEADLY = frozenset({LAVA})
 
@@ -363,6 +364,24 @@ class Builder:
 
     def podoboo(self, col):
         self.enemies.append((col, FLOOR - 1, "podoboo"))
+        return self
+
+    def springboard(self, col):
+        """A spring on the floor, with a coin arc overhead that only it reaches.
+
+        A launch carries you a long way, so there must be open floor ahead to
+        come down on -- the same rule as a walk-off from a shelf, only further."""
+        for g in self.gaps:
+            if 0 <= g - col <= 13 or 0 <= col - g <= 4:
+                self.problems.append(f"springboard at {col} is {g - col} tile(s) "
+                                     f"from the pit at {g}")
+                break
+        self.g[FLOOR - 1][col] = SPRING
+        for i, row in enumerate((FLOOR - 8, FLOOR - 9, FLOOR - 9, FLOOR - 8)):
+            if self.g[row][col + i] == EMPTY:
+                self.g[row][col + i] = COIN
+        return self
+
     def gem(self, row, col):
         """An ember gem. Never over a pit, and held to the same reachability rule
         as a block: a weak flick from the floor, or a step within reach."""
@@ -433,7 +452,8 @@ class Builder:
         for c in range(self.w):
             for r in range(self.rows_n):
                 ch = self.g[r][c]
-                if ch in (PIPE, PIPE_IN, START, AXE, CASTLE, EXIT, VINE, CHECK):
+                if ch in (PIPE, PIPE_IN, START, AXE, CASTLE, EXIT, VINE, CHECK,
+                          SPRING):
                     below = self.g[r + 1][c] if r + 1 < self.rows_n else GROUND
                     if below not in SOLID and below != LAVA:
                         errs.append(f"'{ch}' at ({c},{r}) floats over '{below}'")
@@ -1239,6 +1259,7 @@ def w6_1():
     b.run(FLOOR - 4, 106, "rB?")
     b.stairs(114, 4)
     b.flag(120)
+    b.springboard(81)
     b.checkpoint(70)
     b.gem(5, 21)
     b.gem(5, 63)
@@ -1276,6 +1297,7 @@ def w6_2():
     b.pipe(120, height=2)
     b.stairs(122, 4)
     b.flag(128)
+    b.springboard(36)
     b.checkpoint(72)
     b.gem(6, 12)
     b.gem(5, 111)

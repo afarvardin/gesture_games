@@ -43,19 +43,19 @@ level starts: **the Amber Wilds** (autumn, falling leaves, a harvest moon over
 5-3), **the Frostpeak Highlands** (snowy peaks, the northern lights over 6-3),
 **the Storm Coast** (rain and lightning) and **the Ashen Kingdom** (volcanoes and
 falling ash). Their castles are torchlit keeps with embers rising off the lava.
-
 Every level from World 5 on also has:
 
 - a **checkpoint banner** partway through; die past it and you come back there;
 - three hidden **ember gems** (some in the bonus rooms); find all three for a life;
-- every castle ends in a **boss** in a flat arena before the axe, each a cousin
+- and every castle ends in a **boss** in a flat arena before the axe, each a cousin
   of the next: the **Cinder Whelp** (3 fireballs), the **Slag Warden** (4; no fire,
   but his slams send shockwaves along the floor), the **Storm Drake** (4; breathes
   twice, so jump twice) and the **Magma King** (5). A banner names each boss and a
   health bar stays up for the fight.
 
 The castles also have **cinder bats**, which flutter as a warning and then dive
-through head height in a fixed arc (burn them or step aside).
+through head height in a fixed arc (burn them or step aside), and the World 6
+highlands have **springboards** that throw you up to coin arcs out of normal reach.
 
 ## Running and options
 

@@ -148,6 +148,7 @@ BAT_SWOOP_TIME = 1.5              # s for the whole dive and climb
 BAT_SWOOP_DIST = 8 * TILE         # px it travels across in one dive
 BAT_REST = 2.4                    # s hanging before it can dive again
 
+SPRINGBOARD_VY = 18.5             # px/frame up: about 7 tiles of height
 
 SKELETON_SPEED = 1.0              # px/frame; a shade slower than a goomba
 SKELETON_REST = 3.4               # s a stomped skeleton lies in a heap
@@ -2189,6 +2190,16 @@ class Game:
                 if not h.grounded:
                     h.grounded = True
                     h.jumps_used = 0
+                row = int(r.bottom // TILE)
+                for col in (int((r.left + 4) // TILE), int((r.right - 4) // TILE)):
+                    if self.level.tile_at(col, row) == LV.SPRING:
+                        # Thrown high. jumps_used=1 keeps the double jump for
+                        # steering the way down.
+                        h.vy = -SPRINGBOARD_VY
+                        h.grounded = False
+                        h.jumps_used = 1
+                        self.level.bumps[(col, row)] = BUMP_TIME
+                        break
             else:
                 h.grounded = False
         else:
@@ -2544,6 +2555,15 @@ class Game:
                 side = -1 if i % 2 else 1
                 pygame.draw.ellipse(s, (80, 200, 90),
                                     (x + 20 + side * 12 - 6, yy - 16, 14, 10))
+        elif ch == LV.SPRING:
+            squash = 8 if (c, r) in self.level.bumps else 0
+            top = y + 10 + squash
+            pygame.draw.rect(s, (70, 74, 90), (x + 4, y + TILE - 8, TILE - 8, 8))
+            for i in range(4):                     # the coil
+                yy = top + 8 + i * (TILE - 18 - squash) // 4
+                pygame.draw.line(s, (200, 206, 220), (x + 10, yy), (x + TILE - 10, yy + 4), 3)
+            pygame.draw.rect(s, (230, 70, 60), (x + 2, top, TILE - 4, 8), border_radius=3)
+            pygame.draw.rect(s, (255, 150, 140), (x + 6, top + 1, TILE - 12, 2))
         elif ch == LV.GEM:
             bob = math.sin(now * 3 + c) * 3
             cx, cy = x + TILE // 2, y + TILE // 2 + bob

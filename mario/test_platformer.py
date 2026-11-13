@@ -752,6 +752,14 @@ g.fireballs = [P.Fireball(bat.x + 16, bat.y - 12, 0.0, now)]
 g.collide_entities(now)
 check("fire kills it", bat.dying > 0)
 
+print("\n[19] springboards throw you high")
+g = new_game(6, 1)
+col = next(c for c in range(g.level.cols) if g.level.tile_at(c, LV.FLOOR - 1) == LV.SPRING)
+h = g.hero
+h.x, h.y, h.vy, h.grounded = col * P.TILE + 4, (LV.FLOOR - 1) * P.TILE - 2, 6.0, False
+g.move_y(h, 8500.0)
+check("landing on one launches you", h.vy <= -P.SPRINGBOARD_VY + 0.01, f"vy={h.vy}")
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:
