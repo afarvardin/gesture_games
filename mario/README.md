@@ -54,6 +54,9 @@ Every level from World 5 on also has:
   twice, so jump twice) and the **Magma King** (5). A banner names each boss and a
   health bar stays up for the fight.
 
+The castles also have **cinder bats**, which flutter as a warning and then dive
+through head height in a fixed arc (burn them or step aside).
+
 ## Running and options
 
 ```bash

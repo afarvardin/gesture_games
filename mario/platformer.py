@@ -139,6 +139,16 @@ SPRING_BOOST = 1.18               # jump speed multiplier: ~1.4x the height
 GOLD_TIME = 8.0                   # s of smashing through enemies untouched
 POWER_WARN = 2.0                  # s before a power runs out that it flickers
 
+# Cinder bats (World 5-8 castles). They give a tell -- a flutter in place -- and
+# then commit to an arc aimed where you WERE, so moving or firing answers them;
+# a bat that homed in mid-dive could not be dodged at gesture latency.
+BAT_WAKE = 5.0 * TILE             # px: how close you get before it stirs
+BAT_TELL = 0.5                    # s of fluttering before the dive
+BAT_SWOOP_TIME = 1.5              # s for the whole dive and climb
+BAT_SWOOP_DIST = 8 * TILE         # px it travels across in one dive
+BAT_REST = 2.4                    # s hanging before it can dive again
+
+
 SKELETON_SPEED = 1.0              # px/frame; a shade slower than a goomba
 SKELETON_REST = 3.4               # s a stomped skeleton lies in a heap
 SKELETON_RATTLE = 0.8             # s of rattling before it stands: the warning
@@ -471,6 +481,30 @@ SKELETON_B = SKELETON_A[:8] + [
     "...dD...",
     "...DD...",
 ]
+BAT_HANG = [                         # folded, upside down, ember eyes open
+    "...KK...",
+    "..NNNN..",
+    ".nNNNNn.",
+    ".nNeeNn.",
+    "..NNNN..",
+    "...NN...",
+]
+BAT_UP = [
+    "n......n",
+    "nn.NN.nn",
+    ".nNNNNn.",
+    "..NeeN..",
+    "...NN...",
+    "........",
+]
+BAT_DOWN = [
+    "........",
+    "...NN...",
+    "..NNNN..",
+    ".nNeeNn.",
+    "nn.NN.nn",
+    "n......n",
+]
 BONES_PIXELS = [                     # stomped: a heap that pulls itself back up
     "........",
     "........",
@@ -488,7 +522,7 @@ PIXEL_COLORS = {
     "Q": (236, 84, 140), "J": (40, 170, 190), "Z": (250, 196, 40),
     "z": (196, 128, 20), "V": (104, 112, 52), "y": (206, 214, 80),
     "s": (196, 198, 176), "D": (232, 226, 206), "d": (160, 150, 130),
-    "e": (255, 110, 40),
+    "e": (255, 110, 40), "N": (96, 66, 84), "n": (226, 104, 52),
     "K": (20, 20, 30), "E": (168, 84, 36),
     "F": (72, 40, 20), "W": (250, 250, 250), "G": (60, 180, 70),
     "Y": (240, 210, 90), "M": (228, 60, 50), "O": (250, 170, 60),
@@ -963,6 +997,12 @@ class Enemy:
         self.rise_at = 0.0                       # and when it gets back up
         if kind == "skeleton":
             self.H = 40                          # a head taller than a goomba
+        if kind == "bat":
+            self.H = 24
+            self.bat_state = "hang"              # hang -> wake -> swoop -> hang
+            self.swoop_at = self.swoop_t0 = 0.0
+            self.swoop_dir = -1
+            self.x0, self.y0 = self.x, self.y
         speed = {"goomba": ENEMY_SPEED, "koopa": KOOPA_SPEED,
                  "buzzy": ENEMY_SPEED, "cheep": CHEEP_SPEED,
                  "spiny": ENEMY_SPEED * 1.2,
@@ -981,7 +1021,7 @@ class Enemy:
         # A spiny has spikes on its back: fire is the only way past it, which is the
         # mirror image of the buzzy beetle shrugging off fire.
         return self.kind in ("goomba", "koopa", "cheep", "buzzy", "para", "hammer",
-                             "bullet", "skeleton")   # not spiny (spikes), not
+                             "bullet", "skeleton", "bat")   # not spiny, not
                                                      # bowser (armoured)
 
     @property
@@ -1082,6 +1122,32 @@ class Enemy:
                     not level.solid_at(ahead, self.y + 4):
                 self.vx = -self.vx
                 self.x += self.vx * 2
+            return
+
+        if self.kind == "bat":
+            if self.bat_state == "hang":
+                if now >= self.timer and abs(self.target_x - self.x) < BAT_WAKE:
+                    self.bat_state = "wake"
+                    self.swoop_at = now + BAT_TELL
+                    self.swoop_dir = 1 if self.target_x > self.x else -1
+                return
+            if self.bat_state == "wake":
+                if now >= self.swoop_at:
+                    self.bat_state = "swoop"
+                    self.swoop_t0 = now
+                    self.x0, self.y0 = self.x, self.y
+                return
+            t = (now - self.swoop_t0) / BAT_SWOOP_TIME
+            if t >= 1.0:
+                self.bat_state = "hang"
+                self.y = self.y0
+                self.timer = now + BAT_REST
+                return
+            # Down through head height at the middle of the arc, then back up.
+            low = LV.FLOOR * TILE - 8
+            self.x = clamp(self.x0 + self.swoop_dir * BAT_SWOOP_DIST * t,
+                           8, level.pw - 40)
+            self.y = self.y0 + (low - self.y0) * (1 - (2 * t - 1) ** 2)
             return
 
         if self.kind == "skeleton" and self.collapsed:
@@ -1436,6 +1502,9 @@ class Game:
             "skel_a_r": build_sprite(SKELETON_A, 4, flip=True),
             "skel_b_r": build_sprite(SKELETON_B, 4, flip=True),
             "bones": build_sprite(BONES_PIXELS, 4),
+            "bat_hang": build_sprite(BAT_HANG, 4),
+            "bat_up": build_sprite(BAT_UP, 4),
+            "bat_down": build_sprite(BAT_DOWN, 4),
         }
         self.sky_cache = {}
         self.mk_cache = {}               # boss frames, by (mouth, glow) step
@@ -1864,7 +1933,7 @@ class Game:
         self.items = [it for it in self.items if it.alive]
         spawned = []
         for e in self.enemies:
-            if e.kind in ("lakitu", "skeleton"):
+            if e.kind in ("lakitu", "skeleton", "bat"):
                 e.target_x = self.hero.x
             e.update(self.level, dt, now)
             if e.quake_now:
@@ -2641,6 +2710,19 @@ class Game:
                 continue
             if e.kind == "skeleton":
                 self.draw_skeleton(e, r, ox, now)
+                continue
+            if e.kind == "bat" and e.dying <= 0:
+                if e.bat_state == "hang":
+                    spr = self.spr["bat_hang"]
+                else:
+                    rate = 22 if e.bat_state == "wake" else 12   # frantic when waking
+                    spr = self.spr["bat_up" if int(now * rate) % 2 else "bat_down"]
+                jit = (int(now * 30) % 3 - 1) if e.bat_state == "wake" else 0
+                if e.bat_state != "hang":            # an ember glow, so you see it come
+                    glow = pygame.Surface((64, 52), pygame.SRCALPHA)
+                    pygame.draw.ellipse(glow, (255, 120, 50, 55), (0, 0, 64, 52))
+                    s.blit(glow, (r.x - ox - 16, r.y + HUD_H - 14))
+                s.blit(spr, (r.x - ox + jit, r.y + HUD_H))
                 continue
             if e.dying > 0:
                 pygame.draw.ellipse(s, (150, 80, 40),

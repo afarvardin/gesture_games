@@ -730,6 +730,28 @@ for _ in range(hp):
     g.collide_entities(now)
 check("a whelp goes down to its fireballs", b.dying > 0, f"hp {hp}")
 
+print("\n[18] cinder bats: a tell, then a dive through head height")
+check("the World 5-8 castles have bats",
+      all(any(k == "bat" for _, _, k in LV.load(w, 4)["enemies"]) for w in (5, 6, 7, 8)))
+g = new_game(5, 4)
+bat = next(e for e in g.enemies if e.kind == "bat")
+g.enemies = [bat]
+now = 8400.0
+bat.target_x = bat.x - 3 * P.TILE
+bat.update(g.level, DT, now)
+check("it stirs when you come near", bat.bat_state == "wake")
+low = bat.y
+for _ in range(int((P.BAT_TELL + P.BAT_SWOOP_TIME + 0.1) * P.FPS)):
+    now += DT
+    bat.update(g.level, DT, now)
+    low = max(low, bat.y)
+check("then dives to head height", LV.FLOOR * P.TILE - low < 40,
+      f"lowest {LV.FLOOR * P.TILE - low:.0f}px above the floor")
+check("and climbs back up to hang", bat.bat_state == "hang")
+g.fireballs = [P.Fireball(bat.x + 16, bat.y - 12, 0.0, now)]
+g.collide_entities(now)
+check("fire kills it", bat.dying > 0)
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:
