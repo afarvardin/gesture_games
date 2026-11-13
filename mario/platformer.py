@@ -350,6 +350,263 @@ def build_sprite(pixels, scale, flip=False):
     return surf
 
 
+# ---------- the Magma King, the World 8 boss ----------
+# Too big and too animated for an 8x8 pixel map: he is drawn from outlined shapes
+# instead, facing right, on a canvas in "design px", at 2x and then smoothed down
+# so the ink lines stay clean. Low-slung on purpose: his fire leaves at leg height
+# (so a jump clears it), so his mouth sits at leg height too and the jet visibly
+# comes out of it.
+MK_W, MK_H = 138, 112             # canvas, design px
+MK_ANCHOR_X = 80                  # canvas x that sits over the middle of his hitbox
+MK_FOOT_Y = 108                   # canvas y of the soles of his feet
+MK_SS = 2                         # supersampling
+MK_SCALE = 1.25                   # on screen: a final boss should tower a bit
+MK_HINGE = (98, 86)               # jaw hinge: the head pivots round this
+MK_INK = (24, 12, 16)
+MK_SKIN, MK_SKIN_DK, MK_SKIN_LT = (104, 92, 110), (72, 62, 82), (140, 128, 146)
+MK_BELLY, MK_BELLY_DK = (188, 168, 140), (146, 126, 104)
+MK_SHELL, MK_SHELL_LT, MK_SHELL_RIM = (36, 28, 44), (78, 66, 96), (60, 50, 70)
+MK_BONE, MK_BONE_DK = (236, 224, 196), (184, 168, 138)
+MK_IRON, MK_IRON_LT = (98, 98, 112), (160, 160, 176)
+MK_CRACK = [                      # glowing seams in the shell
+    [(30, 62), (38, 53), (36, 45), (44, 38)],
+    [(38, 53), (48, 59), (58, 52), (66, 57), (75, 49)],
+    [(58, 52), (56, 43), (62, 35)],
+    [(48, 59), (46, 70), (54, 78), (52, 88)],
+    [(66, 57), (74, 67), (84, 66), (89, 74)],
+    [(74, 67), (70, 79), (76, 88)],
+    [(22, 76), (34, 73), (46, 70)],
+]
+MK_SHARDS = [((28, 42), (19, 26)), ((43, 32), (37, 13)),   # (base, tip) of the
+             ((60, 28), (59, 9)), ((76, 34), (82, 17))]     # obsidian ridge
+
+
+def _lerp_col(a, b, t):
+    t = max(0.0, min(1.0, t))
+    return tuple(int(a[k] + (b[k] - a[k]) * t) for k in range(3))
+
+
+def _bez(p0, p1, p2, p3, n=12):
+    out = []
+    for i in range(n + 1):
+        t = i / n
+        u = 1 - t
+        out.append((u * u * u * p0[0] + 3 * u * u * t * p1[0]
+                    + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+                    u * u * u * p0[1] + 3 * u * u * t * p1[1]
+                    + 3 * u * t * t * p2[1] + t * t * t * p3[1]))
+    return out
+
+
+def _taper(line, w0, w1):
+    """A polygon around a centreline, w0 wide at the root and w1 at the tip."""
+    left, right = [], []
+    n = len(line)
+    for i, (x, y) in enumerate(line):
+        ax, ay = line[max(0, i - 1)]
+        bx, by = line[min(n - 1, i + 1)]
+        dx, dy = bx - ax, by - ay
+        d = math.hypot(dx, dy) or 1.0
+        w = (w0 + (w1 - w0) * i / (n - 1)) / 2
+        left.append((x - dy / d * w, y + dx / d * w))
+        right.append((x + dy / d * w, y - dx / d * w))
+    return left + right[::-1]
+
+
+def _rot(pts, angle, pivot=MK_HINGE):
+    c, s = math.cos(angle), math.sin(angle)
+    px, py = pivot
+    return [(px + (x - px) * c - (y - py) * s, py + (x - px) * s + (y - py) * c)
+            for x, y in pts]
+
+
+def _ink(surf, pts, fill, width=1.6):
+    """Fill a polygon and give it a round-jointed ink outline."""
+    p = [(x * MK_SS, y * MK_SS) for x, y in pts]
+    pygame.draw.polygon(surf, fill, p)
+    w = max(1, round(width * MK_SS))
+    pygame.draw.lines(surf, MK_INK, True, p, w)
+    for x, y in p:
+        pygame.draw.circle(surf, MK_INK, (round(x), round(y)), w // 2)
+
+
+def _stroke(surf, pts, col, width):
+    p = [(x * MK_SS, y * MK_SS) for x, y in pts]
+    w = max(1, round(width * MK_SS))
+    pygame.draw.lines(surf, col, False, p, w)
+    for x, y in p:
+        pygame.draw.circle(surf, col, (round(x), round(y)), w // 2)
+
+
+def _dot(surf, centre, r, col):
+    pygame.draw.circle(surf, col, (round(centre[0] * MK_SS),
+                                   round(centre[1] * MK_SS)), max(1, round(r * MK_SS)))
+
+
+def _leg(x0, x1, top, ground):
+    """A thick pillar of a leg with a splayed foot, toes forward (to the right)."""
+    return [(x0 + 3, top), (x1 - 3, top), (x1, ground - 9), (x1 + 4, ground - 4),
+            (x1 + 4, ground), (x0 - 2, ground), (x0 - 1, ground - 6)]
+
+
+def _claws(surf, x1, ground):
+    for k in range(3):
+        tx = x1 - 9 + k * 5
+        _ink(surf, [(tx, ground - 5), (tx + 7, ground - 1), (tx, ground)],
+             MK_BONE, 1.2)
+
+
+def draw_magma_king(mouth, glow):
+    """One frame of the boss, facing right.
+
+    mouth: 0 shut .. 1 roaring wide.  glow: 0 embers .. 1 white-hot, for the cracks
+    in his shell, his eye and his throat -- it climbs as he winds up to breathe.
+    """
+    S = MK_SS
+    surf = pygame.Surface((MK_W * S, MK_H * S), pygame.SRCALPHA)
+    ground = MK_FOOT_Y
+    hot = _lerp_col((255, 120, 30), (255, 236, 150), glow)
+    warm = _lerp_col((150, 40, 12), (255, 120, 30), glow)
+
+    # Tail, sweeping back, with a row of small obsidian spurs.
+    _ink(surf, _bez((26, 82), (14, 86), (8, 94), (1, 102))
+         + _bez((1, 102), (10, 105), (22, 106), (34, 104)), MK_SKIN)
+    for bx, by, tx, ty in ((9, 94, 4, 88), (15, 89, 11, 82)):
+        _ink(surf, [(bx - 3, by + 1), (tx, ty), (bx + 3, by - 1)], MK_SHELL, 1.2)
+
+    # Far legs, in shadow, a step up the screen so they read as further away.
+    _ink(surf, _leg(42, 62, 82, ground - 3), MK_SKIN_DK)
+    _ink(surf, _leg(62, 84, 82, ground - 3), MK_SKIN_DK)
+
+    # Body, and the ash-pale plates of his belly under the shell.
+    _ink(surf, _bez((22, 90), (22, 70), (96, 70), (98, 90))
+         + _bez((98, 90), (96, 106), (24, 106), (22, 90)), MK_SKIN)
+    _ink(surf, [(34, 93), (86, 93), (84, 102), (36, 102)], MK_BELLY, 1.2)
+    for x in range(42, 84, 8):
+        _stroke(surf, [(x, 94), (x - 1, 101)], MK_BELLY_DK, 1.0)
+
+    # Near legs.
+    for x0, x1 in ((28, 54), (72, 98)):
+        _ink(surf, _leg(x0, x1, 84, ground), MK_SKIN)
+        _stroke(surf, [(x0 + 4, 92), (x0 + 9, 90)], MK_SKIN_DK, 1.2)
+        _stroke(surf, [(x0 + 5, 98), (x0 + 11, 96)], MK_SKIN_DK, 1.2)
+        _claws(surf, x1, ground)
+
+    # Neck.
+    _ink(surf, [(80, 60), (98, 64), (102, 90), (82, 96)], MK_SKIN)
+
+    # The shell: a cracked obsidian dome with a riveted rim.
+    top = _bez((14, 94), (8, 58), (24, 26), (52, 26)) \
+        + _bez((52, 26), (80, 26), (98, 56), (94, 90))
+    bottom = _bez((94, 90), (70, 99), (36, 101), (14, 94))
+    _ink(surf, top + bottom, MK_SHELL, 2.0)
+    _stroke(surf, _bez((19, 76), (14, 52), (28, 36), (47, 32)), MK_SHELL_LT, 2.2)
+    rim_up = [(x, y - 7) for x, y in bottom[::-1]]
+    _ink(surf, bottom + rim_up, MK_SHELL_RIM, 1.4)
+    for i in range(2, len(bottom) - 1, 2):
+        x, y = bottom[i]
+        _stroke(surf, [(x, y - 1), (x + 1, y - 6)], MK_INK, 1.0)
+        _dot(surf, (x + 3, y - 4), 0.9, MK_SHELL_LT)
+
+    # Heat bleeding out round the cracks, added on top so it only lights the shell.
+    halo = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+    for crack in MK_CRACK:
+        for (ax, ay), (bx, by) in zip(crack, crack[1:]):
+            for t in (0.0, 0.5):
+                _dot(halo, (ax + (bx - ax) * t, ay + (by - ay) * t), 4.5,
+                     _lerp_col((40, 10, 0), (120, 44, 6), glow))
+    surf.blit(halo, (0, 0), special_flags=pygame.BLEND_RGB_ADD)
+    for crack in MK_CRACK:
+        _stroke(surf, crack, (90, 20, 8), 3.2)
+        _stroke(surf, crack, warm, 2.0)
+        _stroke(surf, crack, hot, 0.9)
+
+    # Obsidian shards along the ridge, each with a lit facet.
+    for (bx, by), (tx, ty) in MK_SHARDS:
+        dx, dy = tx - bx, ty - by
+        d = math.hypot(dx, dy)
+        nx, ny = -dy / d * 6, dx / d * 6
+        mid = (bx + dx * 0.55, by + dy * 0.55)
+        shard = [(bx - nx, by - ny), (mid[0] - nx * 0.8, mid[1] - ny * 0.8),
+                 (tx, ty), (mid[0] + nx * 0.8, mid[1] + ny * 0.8), (bx + nx, by + ny)]
+        _ink(surf, shard, MK_SHELL, 1.4)
+        pygame.draw.polygon(surf, MK_SHELL_LT, [
+            (p[0] * S, p[1] * S) for p in (shard[0], shard[1], shard[2], (bx, by))])
+
+    # Head, drawn a size up round the hinge so it holds its own against the shell.
+    # The jaw drops round the hinge and the skull tips back a little as it does,
+    # which is what turns "mouth open" into a roar.
+    hs = 1.22
+    lift = -0.16 * mouth
+    drop = 0.55 * mouth
+
+    def head(pts):
+        hx, hy = MK_HINGE
+        return _rot([(hx + (x - hx) * hs, hy + (y - hy) * hs) for x, y in pts], lift)
+
+    def jawp(pts):
+        hx, hy = MK_HINGE
+        return _rot([(hx + (x - hx) * hs, hy + (y - hy) * hs) for x, y in pts], drop)
+
+    skull = head(_bez((92, 72), (94, 58), (108, 54), (116, 64))
+                 + _bez((116, 64), (121, 68), (126, 71), (127, 79))
+                 + [(125, 85), (100, 86), (92, 80)])
+    jaw = jawp([(95, 84), (122, 85), (120, 90), (111, 95), (99, 95), (93, 90)])
+
+    # Throat, then the jaw with its lower teeth, so the skull covers the hinge.
+    _ink(surf, [head([(94, 84)])[0], head([(124, 85)])[0], jawp([(121, 86)])[0],
+                jawp([(100, 92)])[0]],
+         _lerp_col((96, 18, 20), (255, 150, 40), glow * mouth), 1.0)
+    if mouth > 0.2:
+        _dot(surf, _rot(head([(108, 87)]), drop * 0.4)[0], (3 + 3 * mouth) * hs, hot)
+    for x in (105, 111, 117):
+        _ink(surf, jawp([(x - 2, 85), (x, 81), (x + 2, 85)]), MK_BONE, 1.0)
+    _ink(surf, jaw, MK_SKIN)
+    _stroke(surf, jawp([(101, 91), (116, 90)]), MK_SKIN_DK, 1.0)
+
+    horn_far = head(_taper(_bez((106, 62), (103, 51), (98, 45), (91, 42)), 6, 0.6))
+    _ink(surf, horn_far, MK_BONE_DK, 1.4)
+
+    _ink(surf, skull, MK_SKIN)
+    _ink(surf, head([(97, 70), (106, 62), (103, 68)]), MK_SKIN_LT, 0.0)
+    for x in (103, 109, 115, 121):                       # upper teeth
+        size = 5 if x == 115 else 3.4
+        _ink(surf, head([(x - 2, 85.5), (x, 85.5 + size), (x + 2, 85.5)]),
+             MK_BONE, 1.0)
+    _stroke(surf, head([(97, 78), (103, 80)]), MK_SKIN_DK, 1.2)   # cheek
+    _stroke(surf, head([(96, 82), (101, 83)]), MK_SKIN_DK, 1.2)
+    ex, ey = head([(110, 73)])[0]
+    rx, ry = 5.0 * hs, 3.9 * hs
+    pygame.draw.ellipse(surf, MK_INK, ((ex - rx) * S, (ey - ry) * S, 2 * rx * S,
+                                       2 * ry * S))
+    pygame.draw.ellipse(surf, hot, ((ex - rx + 1.2) * S, (ey - ry + 1.2) * S,
+                                    (2 * rx - 2.4) * S, (2 * ry - 2.4) * S))
+    pygame.draw.ellipse(surf, MK_INK, ((ex - 0.8) * S, (ey - ry + 1.2) * S,
+                                       1.8 * S, (2 * ry - 2.4) * S))
+    _ink(surf, head([(101, 64), (113, 66), (120, 74), (104, 68.5)]),  # brow,
+         MK_SKIN_DK, 1.3)                               # slanting down: a scowl
+    nose = head([(122.5, 75.5)])[0]
+    pygame.draw.ellipse(surf, MK_INK, ((nose[0] - 2) * S, (nose[1] - 1.2) * S,
+                                       4 * S, 2.4 * S))
+    _dot(surf, nose, 0.7, warm)
+
+    horn = head(_taper(_bez((100, 65), (95, 53), (89, 47), (81, 45)), 8, 0.8))
+    _ink(surf, horn, MK_BONE, 1.6)
+    for i in (3, 6):                                     # growth rings
+        _stroke(surf, [horn[i], horn[-1 - i]], MK_BONE_DK, 1.0)
+
+    # An iron crown, a size too small, with an ember set in it.
+    _ink(surf, head([(99, 61), (113, 58.5), (116, 49), (111.5, 54), (107.5, 45.5),
+                     (104, 54.5), (99.5, 50.5)]), MK_IRON, 1.4)
+    _stroke(surf, head([(100.5, 59), (112, 57)]), MK_IRON_LT, 1.0)
+    gem = head([(106.5, 57.5)])[0]
+    _dot(surf, gem, 2.2, MK_INK)
+    _dot(surf, gem, 1.4, hot)
+
+    return pygame.transform.smoothscale(
+        surf, (round(MK_W * MK_SCALE), round(MK_H * MK_SCALE)))
+
+
 # ==========================================
 # ENTITIES
 # ==========================================
@@ -480,6 +737,8 @@ class Enemy:
         self.home_y = float(y) + (TILE if kind == "podoboo" else 0)
         self.timer = now + (x % 17) * 0.11        # stagger, without randomness
         self.breath_at = self.timer + 1.1        # offset, so hop and breath differ
+        self.landed_at = -9.0                    # for the boss's landing squash
+        self.hurt_until = 0.0                    # and his hit flash
         speed = {"goomba": ENEMY_SPEED, "koopa": KOOPA_SPEED,
                  "buzzy": ENEMY_SPEED, "cheep": CHEEP_SPEED,
                  "spiny": ENEMY_SPEED * 1.2}.get(kind, 0.0)
@@ -602,6 +861,8 @@ class Enemy:
             self.vy = min(self.vy + GRAVITY, MAX_FALL)
             self.y += self.vy
             if self.y >= self.home_y:
+                if self.vy > 0:
+                    self.landed_at = now
                 self.y, self.vy = self.home_y, 0.0
                 if now >= self.timer:
                     self.timer = now + BOWSER_HOP_EVERY
@@ -911,6 +1172,7 @@ class Game:
             "lakitu": build_sprite(LAKITU_PIXELS, 4),
         }
         self.sky_cache = {}
+        self.mk_cache = {}               # boss frames, by (mouth, glow) step
 
         self.log_path = log_path
         self._csv_file = self._csv = None
@@ -1374,11 +1636,12 @@ class Game:
                         continue          # buzzy beetles are made for this
                     if e.armoured:
                         e.hp -= 1
+                        e.hurt_until = now + 0.2
                         if e.hp > 0:
-                            self._toast(f"BOWSER: {e.hp} more!", now, 0.9)
+                            self._toast(f"MAGMA KING: {e.hp} more!", now, 0.9)
                             continue
                         self.score += 5000
-                        self._toast("BOWSER DOWN!", now, 2.0)
+                        self._toast("MAGMA KING DOWN!", now, 2.0)
                     e.dying = 0.25
                     self.score += 100
                     self._toast("+100", now, 0.7)
@@ -1694,6 +1957,68 @@ class Game:
             arrow = self.small.render("", True, (255, 210, 140))
             self.screen.blit(arrow, (x - 22, top - 20))
 
+    def draw_magma_king(self, e, ox, now):
+        """The World 8 boss: winds up, roars, squashes on landing, flashes when hit."""
+        # Mouth and glow are read off his breath timer, so the wind-up always
+        # matches the jet that follows it -- a tell the player can learn.
+        charge = clamp(1 - (e.breath_at - now) / 0.6, 0.0, 1.0)
+        since = now - (e.breath_at - BOWSER_BREATH_EVERY)
+        roar = clamp(1 - since / 0.4, 0.0, 1.0) if since >= 0 else 0.0
+        mouth = max(charge * 0.4, roar)
+        glow = clamp(0.35 + 0.12 * math.sin(now * 4) + 0.55 * max(charge, roar),
+                     0.0, 1.0)
+        key = (round(mouth * 8), round(glow * 8))
+        spr = self.mk_cache.get(key)
+        if spr is None:
+            spr = self.mk_cache[key] = draw_magma_king(key[0] / 8, key[1] / 8)
+
+        # Squash and stretch: crouch before a hop, stretch rising, flatten landing.
+        sx = sy = 1.0
+        if e.y < e.home_y - 0.5:
+            sx, sy = (0.94, 1.07) if e.vy < 0 else (0.97, 1.03)
+        elif now - e.landed_at < 0.2:
+            k = 1 - (now - e.landed_at) / 0.2
+            sx, sy = 1 + 0.12 * k, 1 - 0.12 * k
+        elif e.timer - now < 0.18:
+            k = 1 - max(0.0, e.timer - now) / 0.18
+            sx, sy = 1 + 0.07 * k, 1 - 0.07 * k
+        else:
+            sy = 1 + 0.012 * math.sin(now * 3.2)          # breathing
+
+        face = -1 if self.hero.x < e.x else 1             # same rule as his fire
+        if face < 0:
+            spr = pygame.transform.flip(spr, True, False)
+        if (sx, sy) != (1.0, 1.0):
+            w, h = spr.get_size()
+            spr = pygame.transform.smoothscale(spr, (round(w * sx), round(h * sy)))
+        if (now < e.hurt_until or e.dying > 0) and int(now * 30) % 2 == 0:
+            spr = spr.copy()
+            spr.fill((190, 190, 190), special_flags=pygame.BLEND_RGB_ADD)
+
+        # The sprite canvas is in design px; MK_SCALE takes it to screen px.
+        cx = e.x + e.W / 2 - ox
+        anchor = (MK_ANCHOR_X if face > 0 else MK_W - MK_ANCHOR_X) * MK_SCALE * sx
+        body_cx = cx - face * 16 * MK_SCALE              # middle of the shell
+        foot = e.home_y + HUD_H
+        shrink = clamp(1 - (e.home_y - e.y) / 160, 0.4, 1.0)
+        sw, sh = round(120 * MK_SCALE), 16
+        shadow = pygame.Surface((sw, sh), pygame.SRCALPHA)
+        pygame.draw.ellipse(shadow, (0, 0, 0, 90), (sw / 2 * (1 - shrink),
+                                                    sh / 2 * (1 - shrink),
+                                                    sw * shrink, sh * shrink))
+        self.screen.blit(shadow, (round(body_cx - sw / 2), round(foot - sh / 2)))
+        self.screen.blit(spr, (round(cx - anchor),
+                               round(e.y + HUD_H - MK_FOOT_Y * MK_SCALE * sy)))
+
+        if e.dying <= 0:
+            bar = max(0, e.hp) / BOWSER_HP
+            top = round(e.y + HUD_H - 99 * MK_SCALE * sy - 14)
+            bw = 84
+            pygame.draw.rect(self.screen, (60, 20, 20), (body_cx - bw / 2, top, bw, 7))
+            pygame.draw.rect(self.screen, (230, 60, 50),
+                             (body_cx - bw / 2, top, round(bw * bar), 7))
+            pygame.draw.rect(self.screen, MK_INK, (body_cx - bw / 2, top, bw, 7), 1)
+
     def draw_entities(self, ox, now):
         s = self.screen
         for it in self.items:
@@ -1701,7 +2026,14 @@ class Game:
             s.blit(self.spr["mushroom"], (r.x - ox, r.y + HUD_H))
         for e in self.enemies:
             r = e.rect()
-            if r.right - ox < -40 or r.left - ox > WIDTH + 40:
+            # The boss is drawn well past his hitbox, so he gets a wider margin
+            # or he pops in and out at the screen edge.
+            margin = MK_W * MK_SCALE if e.kind == "bowser" else 40
+            if r.right - ox < -margin or r.left - ox > WIDTH + margin:
+                continue
+            if e.kind == "bowser":
+                self.draw_magma_king(e, ox, now)     # he flashes out, not flattens
+                continue
                 continue
             if e.dying > 0:
                 pygame.draw.ellipse(s, (150, 80, 40),
@@ -1734,26 +2066,6 @@ class Game:
                 continue
             if e.kind == "cannon":
                 continue                        # drawn as a tile, not a sprite
-            if e.kind == "bowser":
-                bx, by = int(e.x - ox), int(e.y + HUD_H)
-                pygame.draw.rect(s, (70, 160, 60), (bx - 6, by - 58, 56, 44))
-                pygame.draw.rect(s, (240, 230, 170), (bx + 4, by - 46, 34, 22))
-                for i in range(4):                       # shell spikes
-                    pygame.draw.polygon(s, (240, 240, 230), [
-                        (bx - 4 + i * 16, by - 58), (bx + 3 + i * 16, by - 70),
-                        (bx + 10 + i * 16, by - 58)])
-                pygame.draw.rect(s, (70, 160, 60), (bx + 30, by - 84, 26, 28))
-                pygame.draw.rect(s, (250, 250, 250), (bx + 36, by - 74, 16, 7))
-                for i in range(2):                       # horns
-                    pygame.draw.polygon(s, (240, 240, 230), [
-                        (bx + 32 + i * 16, by - 84), (bx + 36 + i * 16, by - 96),
-                        (bx + 40 + i * 16, by - 84)])
-                pygame.draw.rect(s, (200, 90, 40), (bx, by - 14, 18, 14))
-                pygame.draw.rect(s, (200, 90, 40), (bx + 30, by - 14, 18, 14))
-                bar = max(0, e.hp) / BOWSER_HP
-                pygame.draw.rect(s, (60, 20, 20), (bx - 6, by - 106, 56, 6))
-                pygame.draw.rect(s, (230, 60, 50), (bx - 6, by - 106, int(56 * bar), 6))
-                continue
             if e.kind == "bullet":
                 bx, by = int(e.x - ox), int(e.y + HUD_H - 16)
                 pygame.draw.ellipse(s, (30, 30, 38), (bx - 14, by - 8, 28, 18))
