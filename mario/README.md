@@ -48,6 +48,11 @@ Every level from World 5 on also has:
 
 - a **checkpoint banner** partway through; die past it and you come back there;
 - three hidden **ember gems** (some in the bonus rooms); find all three for a life;
+- every castle ends in a **boss** in a flat arena before the axe, each a cousin
+  of the next: the **Cinder Whelp** (3 fireballs), the **Slag Warden** (4; no fire,
+  but his slams send shockwaves along the floor), the **Storm Drake** (4; breathes
+  twice, so jump twice) and the **Magma King** (5). A banner names each boss and a
+  health bar stays up for the fight.
 
 ## Running and options
 

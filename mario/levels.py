@@ -324,10 +324,15 @@ class Builder:
         self.enemies.append((col, 3, "lakitu"))
         return self
 
-    def bowser(self, col):
-        """The final boss: hops, breathes fire, and throws hammers."""
-        self.enemies.append((col, FLOOR - 1, "bowser"))
+    def boss(self, col, kind):
+        """A castle boss (see BOSSES in the engine): it hops on the spot, so the
+        level gives it a flat arena with the axe behind it."""
+        self.enemies.append((col, FLOOR - 1, kind))
         return self
+
+    def bowser(self, col):
+        """The final boss, the Magma King: hops and breathes fire."""
+        return self.boss(col, "bowser")
 
     def firebar(self, col, row, length=4):
         """A bar of fire rotating around a block, as in the castles."""
@@ -1165,9 +1170,9 @@ def w5_3():
 
 
 def w5_4():
-    """Castle: firebars over a long run of lava, podoboos between them."""
-    b = Builder(118, THEME_CASTLE, "5-4")
-    b = Builder(118, THEME_KEEP, "5-4")
+    """Castle: firebars over a long run of lava, podoboos between them, and the
+    Cinder Whelp -- three fireballs -- guarding the axe."""
+    b = Builder(128, THEME_KEEP, "5-4")
     b.floor()
     b.start(3)
     for a in (18, 32, 48, 64, 80, 96):
@@ -1191,9 +1196,10 @@ def w5_4():
     b.enemy(91)
     b.firebar(92, FLOOR - 6, length=4)
     b.podoboo(97)
-    b.enemy(106)
-    b.stairs(108, 3)
-    b.axe(113)
+    # The arena: flat floor, the Cinder Whelp in the middle, the axe behind him.
+    b.boss(110, "whelp")
+    b.axe(122)
+    b.checkpoint(101)
     b.checkpoint(54)
     b.gem(6, 10)
     b.gem(5, 56)
@@ -1319,9 +1325,9 @@ def w6_3():
 
 
 def w6_4():
-    """Castle: firebars over lava, and lifts to carry you between the shelves."""
-    b = Builder(120, THEME_CASTLE, "6-4")
-    b = Builder(120, THEME_KEEP, "6-4")
+    """Castle: firebars over lava, lifts between the shelves, and the Slag Warden,
+    whose slams send shockwaves along the floor -- jump them."""
+    b = Builder(128, THEME_KEEP, "6-4")
     b.floor()
     b.start(3)
     for a in (18, 34, 52, 70, 88):
@@ -1345,8 +1351,9 @@ def w6_4():
     b.podoboo(89)
     b.enemy(98)
     b.firebar(100, FLOOR - 6, length=4)
-    b.stairs(108, 3)
-    b.axe(115)
+    b.boss(113, "warden")
+    b.axe(122)
+    b.checkpoint(93)
     b.checkpoint(76)
     b.gem(6, 10)
     b.gem(6, 76)
@@ -1449,7 +1456,7 @@ def w7_3():
 def w7_4():
     """A maze castle with two forks: both low roads are walled off. The Storm
     Drake at the end breathes twice, so one jump is not enough."""
-    b = Builder(126, THEME_KEEP, "7-4")
+    b = Builder(134, THEME_KEEP, "7-4")
     b.floor()
     b.start(3)
     for a in (16, 32, 74, 86):
@@ -1476,8 +1483,9 @@ def w7_4():
     b.firebar(80, FLOOR - 6, length=5)
     b.podoboo(87)
     b.firebar(112, FLOOR - 5, length=4)
-    b.stairs(116, 3)
-    b.axe(122)
+    b.boss(125, "drake")
+    b.axe(131)
+    b.checkpoint(117)
     b.checkpoint(69)
     b.gem(6, 8)
     b.gem(7, 54)
@@ -1487,7 +1495,7 @@ def w7_4():
 
 # ===========================================================================
 # WORLD 8 -- the finale. The longest overworlds in the game, a hammer bro gauntlet,
-# and a castle that ends with Bowser.
+# and a castle that ends with the Magma King.
 # ===========================================================================
 def w8_1():
     """The long one. Cannons, buzzy beetles and wide open ground to cross.
@@ -1606,9 +1614,8 @@ def w8_3():
 
 
 def w8_4():
-    """The last castle. Forks over lava with the low roads walled off, and Bowser at
-    the end -- five fireballs, or slip past him to the axe."""
-    b = Builder(140, THEME_CASTLE, "8-4")
+    """The last castle. Forks over lava with the low roads walled off, and the
+    Magma King at the end -- five fireballs, or slip past him to the axe."""
     b = Builder(140, THEME_KEEP, "8-4")
     b.floor()
     b.start(3)

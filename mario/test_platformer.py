@@ -689,6 +689,47 @@ g.finish_pipe(now)
 check("a gem taken in a bonus room stays taken", LV.GEM not in "".join(
     "".join(r) for r in g.level.rows), g.level.name)
 
+print("\n[17] every World 5-8 castle ends with a boss")
+for w in (5, 6, 7, 8):
+    bosses = [k for _, _, k in LV.load(w, 4)["enemies"] if k in P.BOSSES]
+    check(f"{w}-4 has a boss", len(bosses) == 1, str(bosses))
+check("the bosses are all different", len({k for w in (5, 6, 7, 8)
+                                            for _, _, k in LV.load(w, 4)["enemies"]
+                                            if k in P.BOSSES}) == 4)
+
+
+def lone_boss(kind, now):
+    g = new_game(8, 4)
+    b = P.Enemy(60 * P.TILE, LV.FLOOR * P.TILE, kind, now)
+    g.enemies = [b]
+    return g, b
+
+
+now = 8300.0
+g, b = lone_boss("warden", now)
+slams = 0
+for _ in range(int(6 * P.FPS)):
+    now += DT
+    b.update(g.level, DT, now)
+    slams += b.quake_now
+    b.quake_now = False
+check("a warden slams once per landing, not every frame", 1 <= slams <= 4,
+      f"{slams} slams in 6s")
+g, b = lone_boss("drake", now)
+jets = 0
+for _ in range(int(4 * P.FPS)):
+    now += DT
+    b.update(g.level, DT, now)
+    jets += b.throw_now
+    b.throw_now = False
+check("a drake breathes twice per wind-up", jets >= 2 and jets % 2 == 0, f"{jets}")
+g, b = lone_boss("whelp", now)
+hp = b.hp
+for _ in range(hp):
+    g.fireballs = [P.Fireball(b.x + 16, b.y - 16, 0.0, now)]
+    g.collide_entities(now)
+check("a whelp goes down to its fireballs", b.dying > 0, f"hp {hp}")
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:
