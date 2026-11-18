@@ -163,6 +163,15 @@ def autoplay(g, strength, run_flag, lookahead=14, max_seconds=140, t0=1000.0):
             hazard = hazard or any(hm.alive and not hm.flat
                                    and -1.5 * P.TILE < hm.x - h.x < 5 * P.TILE
                                    for hm in g.hammers)
+            # A piranha plant is a timed hazard: do not go for its pipe while it is
+            # out, or about to come out. Inside its shy distance it stays down, so
+            # the wait only matters on the approach.
+            for e in g.enemies:
+                if e.kind == "piranha" and e.alive and e.dying <= 0:
+                    to_pipe = (e.x + 36) - (h.x + h.W * 0.5)
+                    if 0 < to_pipe < 3.2 * P.TILE and (
+                            e.pl_phase != "down" or e.timer - now < 0.9):
+                        hazard = True
             # A firebar is a timed hazard too: it sweeps a circle, so wait until the
             # arc is not across the way ahead rather than walking into a spoke.
             front = h.x + h.W + 8
@@ -759,6 +768,76 @@ h = g.hero
 h.x, h.y, h.vy, h.grounded = col * P.TILE + 4, (LV.FLOOR - 1) * P.TILE - 2, 6.0, False
 g.move_y(h, 8500.0)
 check("landing on one launches you", h.vy <= -P.SPRINGBOARD_VY + 0.01, f"vy={h.vy}")
+
+print("\n[20] piranha plants: shy, timed, and never a surprise on landing")
+plant_levels = [f"{w}-{l}" for w, l in ALL
+                if any(k == "piranha" for _, _, k in LV.load(w, l)["enemies"])]
+check("plants live in pipes across the game", len(plant_levels) >= 6, str(plant_levels))
+b = LV.Builder(60, LV.THEME_OVERWORLD, "plant test")
+b.floor(); b.start(3); b.pipe(20, 2, enterable=True, dest="bonus"); b.piranha(20)
+b.flag(55)
+try:
+    b.build()
+    refused = False
+except AssertionError:
+    refused = True
+check("the builder will not put a plant in a pipe you can enter", refused)
+
+
+def lone_plant(now, hero_dx_px):
+    g = new_game(6, 2)
+    col = 46
+    top = next(r for r in range(LV.ROWS) if g.level.tile_at(col, r) == LV.PIPE)
+    pl = P.Enemy(col * P.TILE + 4, top * P.TILE, "piranha", now)
+    g.enemies = [pl]
+    pl.target_x = pl.x + 36 - 15 + hero_dx_px
+    pl.target_y = LV.FLOOR * P.TILE
+    return g, pl
+
+
+now = 9500.0
+g, pl = lone_plant(now, -12 * P.TILE)
+check("a plant starts hidden, and hidden is harmless", pl.harmless and pl.ext == 0)
+top_ext, was_down_after = 0.0, False
+for _ in range(int(9 * P.FPS)):
+    now += DT
+    pl.update(g.level, DT, now)
+    top_ext = max(top_ext, pl.ext)
+    was_down_after = was_down_after or (top_ext >= P.PIRANHA_H and pl.ext == 0)
+check("it rises to its full height", abs(top_ext - P.PIRANHA_H) < 1.0, f"{top_ext:.0f}px")
+check("and sinks away again", was_down_after)
+g, pl = lone_plant(now, 40)          # hero right beside the pipe
+shy = 0.0
+for _ in range(int(10 * P.FPS)):
+    now += DT
+    pl.update(g.level, DT, now)
+    shy = max(shy, pl.ext)
+check("it will not come out while you are beside its pipe", shy == 0.0, f"{shy:.0f}px")
+g, pl = lone_plant(now, 0)
+pl.ext, pl.pl_phase = P.PIRANHA_H, "up"
+g.hero.x, g.hero.y = pl.x + 21, pl.y            # standing on the pipe's lip
+pl.target_x, pl.target_y = g.hero.x, g.hero.y
+pl.update(g.level, DT, now)
+lives = g.lives
+g.collide_entities(now)
+check("standing on its pipe never costs a life", g.lives == lives and pl.harmless)
+g, pl = lone_plant(now, 0)
+pl.ext, pl.pl_phase = P.PIRANHA_H, "up"
+g.hero.x, g.hero.y, g.hero.vy = pl.x + 21, pl.y - 30, 0.0     # at head height
+pl.target_x, pl.target_y = g.hero.x, g.hero.y
+pl.update(g.level, DT, now)
+lives = g.lives
+g.collide_entities(now)
+check("but meeting an out plant at head height does", g.lives == lives - 1)
+g, pl = lone_plant(now, -6 * P.TILE)
+pl.ext, pl.pl_phase = P.PIRANHA_H, "up"
+g.fireballs = [P.Fireball(pl.x + 36, pl.y - 20, 0.0, now)]
+g.collide_entities(now)
+check("fire kills a plant that is out", pl.dying > 0)
+g, pl = lone_plant(now, -6 * P.TILE)
+g.fireballs = [P.Fireball(pl.x + 36, pl.y - 6, 0.0, now)]
+g.collide_entities(now)
+check("and cannot touch one that is hidden", pl.dying == 0 and g.fireballs[0].alive)
 
 print("\n[11] one frame of every level renders")
 for w, l in ALL:

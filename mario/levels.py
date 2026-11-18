@@ -366,6 +366,21 @@ class Builder:
         self.enemies.append((col, FLOOR - 1, "podoboo"))
         return self
 
+    def piranha(self, col):
+        """A piranha plant in the pipe whose left tile is `col`.
+
+        Not in a pipe you can enter: the plant would be sitting in the doorway.
+        The engine keeps plants shy (they will not come out while you are near)
+        and harmless while you stand on their pipe, so a plant is something you
+        time on the approach, never a surprise on landing."""
+        top = next((r for r in range(self.rows_n)
+                    if self.g[r][col] in (PIPE, PIPE_IN)), None)
+        if top is None or self.g[top][col] != PIPE or self.g[top][col + 1] != PIPE:
+            self.problems.append(f"no plain pipe starts at column {col} for a plant")
+            return self
+        self.enemies.append((col, top - 1, "piranha"))
+        return self
+
     def springboard(self, col):
         """A spring on the floor, with a coin arc overhead that only it reaches.
 
@@ -572,6 +587,7 @@ def w1_1():
     b.stairs(100, 4)
     b.pipe(108, height=2)
     b.flag(112)
+    b.piranha(108)
     return b.build()
 
 
@@ -714,6 +730,7 @@ def w2_1():
     b.enemy(125)
     b.stairs(121, 3)
     b.flag(128)
+    b.piranha(64)
     return b.build()
 
 
@@ -834,6 +851,8 @@ def w3_1():
     b.platform(FLOOR - 5, 112, 4, kind=BRICK)
     b.flyer(113, FLOOR - 6, "hammer")
     b.flag(120)
+    b.piranha(18)
+    b.piranha(46)
     return b.build()
 
 
@@ -971,6 +990,8 @@ def w4_1():
     b.enemy(110, "koopa")
     b.stairs(114, 4)
     b.flag(122)
+    b.piranha(18)
+    b.piranha(84)
     return b.build()
 
 
@@ -1301,6 +1322,10 @@ def w6_2():
     b.checkpoint(72)
     b.gem(6, 12)
     b.gem(5, 111)
+    b.piranha(46)
+    b.piranha(70)
+    b.piranha(94)
+    b.piranha(120)
     return b.build()
 
 
@@ -1418,6 +1443,8 @@ def w7_1():
     b.coins(FLOOR - 6, 110, 3)
     b.stairs(114, 4)
     b.flag(120)
+    b.pipe(37, height=2)
+    b.piranha(37)
     b.checkpoint(62)
     b.gem(6, 12)
     b.gem(5, 63)

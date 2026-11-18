@@ -150,6 +150,16 @@ BAT_REST = 2.4                    # s hanging before it can dive again
 
 SPRINGBOARD_VY = 18.5             # px/frame up: about 7 tiles of height
 
+# Piranha plants live in pipes. They are shy -- they will not come out while you
+# are close -- and a plant never catches you standing on its pipe, because a
+# jump onto a pipe at gesture latency is something you cannot see coming.
+PIRANHA_W, PIRANHA_H = 30, 46     # px of plant that shows above the pipe
+PIRANHA_RISE = 0.6                # s to rise (and to sink)
+PIRANHA_UP = 1.3                  # s it stays out
+PIRANHA_HIDE = 1.7                # s it stays down
+PIRANHA_SHY = 1.7 * TILE          # px, hero centre to pipe centre: no emerging
+
+
 SKELETON_SPEED = 1.0              # px/frame; a shade slower than a goomba
 SKELETON_REST = 3.4               # s a stomped skeleton lies in a heap
 SKELETON_RATTLE = 0.8             # s of rattling before it stands: the warning
@@ -998,6 +1008,14 @@ class Enemy:
         self.rise_at = 0.0                       # and when it gets back up
         if kind == "skeleton":
             self.H = 40                          # a head taller than a goomba
+        if kind == "piranha":
+            self.W, self.H = PIRANHA_W, PIRANHA_H
+            self.ext = 0.0                       # px of plant above the pipe
+            self.pl_phase = "down"
+            self.pl_t0 = 0.0
+            self.timer = now + 0.9 + (x % 7) * 0.19   # staggered, never random
+            self.target_y = 0.0
+            self.over_pipe = False               # hero standing on its pipe
         if kind == "bat":
             self.H = 24
             self.bat_state = "hang"              # hang -> wake -> swoop -> hang
@@ -1047,6 +1065,9 @@ class Enemy:
         # from behind with no warning, which is a miserable way to lose a life.
         # Here a shell is scenery until you stomp it again. A heap of bones is
         # scenery too, until it stands back up.
+        if self.kind == "piranha":
+            # Hidden, or just the lip of a leaf showing -- or you are on its pipe.
+            return self.ext < 8 or self.over_pipe
         return self.is_platform or self.submerged or self.shell or self.collapsed
 
     def platform_rect(self):
@@ -1060,6 +1081,9 @@ class Enemy:
                 for i in range(1, self.length + 1)]
 
     def rect(self):
+        if self.kind == "piranha":
+            ext = max(1, int(self.ext))
+            return pygame.Rect(int(self.x) + 21, int(self.y) - ext, PIRANHA_W, ext)
         return pygame.Rect(int(self.x), int(self.y - self.H), self.W, self.H)
 
     def update(self, level, dt, now):
@@ -1123,6 +1147,33 @@ class Enemy:
                     not level.solid_at(ahead, self.y + 4):
                 self.vx = -self.vx
                 self.x += self.vx * 2
+            return
+
+        if self.kind == "piranha":
+            speed = PIRANHA_H / PIRANHA_RISE               # px/s
+            dx = abs(self.target_x + 15 - (self.x + 36))   # hero to pipe centre
+            # Standing on the pipe (feet at its lip) must never cost a life.
+            self.over_pipe = dx < 40 and abs(self.target_y - self.y) < 10
+            above = dx < PIRANHA_SHY * 0.7 and self.target_y <= self.y + 6
+            if self.pl_phase == "down":
+                self.ext = 0.0
+                if now >= self.timer and dx >= PIRANHA_SHY:
+                    self.pl_phase = "rising"
+            elif self.pl_phase == "rising":
+                self.ext = min(PIRANHA_H, self.ext + speed * dt)
+                if above:
+                    self.pl_phase = "sinking"
+                elif self.ext >= PIRANHA_H:
+                    self.pl_phase, self.pl_t0 = "up", now
+            elif self.pl_phase == "up":
+                if now - self.pl_t0 >= PIRANHA_UP or above:
+                    self.pl_phase = "sinking"
+            else:                                           # sinking
+                self.ext = max(0.0, self.ext - speed * dt)
+                if self.ext <= 0.0:
+                    self.pl_phase, self.timer = "down", now + PIRANHA_HIDE
+            return
+
             return
 
         if self.kind == "bat":
@@ -1938,8 +1989,9 @@ class Game:
         self.items = [it for it in self.items if it.alive]
         spawned = []
         for e in self.enemies:
-            if e.kind in ("lakitu", "skeleton", "bat"):
+            if e.kind in ("lakitu", "skeleton", "bat", "piranha"):
                 e.target_x = self.hero.x
+                e.target_y = self.hero.y          # feet
             e.update(self.level, dt, now)
             if e.quake_now:
                 # Two shockwaves out along the floor, one each way, low enough
@@ -2697,6 +2749,44 @@ class Game:
                              (body_cx - bw / 2, top, round(bw * bar), 7))
             pygame.draw.rect(self.screen, MK_INK, (body_cx - bw / 2, top, bw, 7), 1)
 
+    def draw_piranha(self, e, ox, now):
+        """A plant rising out of its pipe. Clipped to above the pipe's lip, so it
+        grows out of the opening instead of being painted over the front."""
+        ext = e.ext
+        if e.dying > 0:
+            ext *= max(0.0, e.dying / 0.25)           # it shrivels back down
+        if ext < 1:
+            return
+        lip = int(e.y + HUD_H)
+        cx = int(e.x + 36 - ox)
+        s = self.screen
+        s.set_clip(pygame.Rect(0, 0, WIDTH, lip))
+        cy = int(lip - ext + 17)                       # head centre
+        sway = int(math.sin(now * 3 + e.home_x) * 2)
+        pygame.draw.rect(s, (40, 150, 60), (cx - 4, cy, 8, lip - cy + 8))   # stem
+        pygame.draw.rect(s, (24, 100, 40), (cx + 1, cy, 3, lip - cy + 8))
+        pygame.draw.polygon(s, (60, 180, 80), [(cx - 4, cy + 18), (cx - 20, cy + 12),
+                                               (cx - 5, cy + 26)])        # a leaf
+        pygame.draw.polygon(s, (60, 180, 80), [(cx + 4, cy + 22), (cx + 19, cy + 17),
+                                               (cx + 5, cy + 30)])
+        hx = cx + sway
+        pygame.draw.circle(s, (208, 44, 58), (hx, cy), 17)                # the head
+        pygame.draw.circle(s, (110, 14, 32), (hx, cy), 17, 2)
+        for dx, dy, r in ((-9, -9, 4), (8, -11, 3), (-12, 1, 3), (10, 4, 3)):
+            pygame.draw.circle(s, (255, 238, 238), (hx + dx, cy + dy), r)
+        chomp = (math.sin(now * 11 + e.home_x) + 1) / 2
+        mh = 3 + int(11 * chomp)
+        pygame.draw.ellipse(s, (58, 6, 22), (hx - 13, cy - mh // 2 + 2, 26, mh))
+        if mh > 5:
+            for dx in (-8, 0, 8):                                          # teeth
+                pygame.draw.polygon(s, (255, 255, 245), [
+                    (hx + dx - 3, cy + 2 + mh // 2), (hx + dx, cy + 2 + mh // 2 - 5),
+                    (hx + dx + 3, cy + 2 + mh // 2)])
+                pygame.draw.polygon(s, (255, 255, 245), [
+                    (hx + dx - 3, cy + 2 - mh // 2), (hx + dx, cy + 2 - mh // 2 + 5),
+                    (hx + dx + 3, cy + 2 - mh // 2)])
+        s.set_clip(None)
+
     def draw_skeleton(self, e, r, ox, now):
         """Walking, a heap of bones, or a heap about to stand up (it rattles)."""
         if e.dying > 0 or e.collapsed:
@@ -2734,6 +2824,10 @@ class Game:
                 continue
             if e.kind == "skeleton":
                 self.draw_skeleton(e, r, ox, now)
+                continue
+            if e.kind == "piranha":
+                self.draw_piranha(e, ox, now)
+                continue
                 continue
             if e.kind == "bat" and e.dying <= 0:
                 if e.bat_state == "hang":

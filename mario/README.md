@@ -53,6 +53,12 @@ Every level from World 5 on also has:
   twice, so jump twice) and the **Magma King** (5). A banner names each boss and a
   health bar stays up for the fight.
 
+**Piranha plants** live in the pipes of Worlds 1-4, 6 and 7-1. They are shy (they
+will not come out while you stand close), they rise and sink on a timer, and one
+never catches you standing on its pipe, so a plant is something you time on the
+approach rather than a surprise on landing. Fire kills one that is out; stomping does
+not.
+
 The castles also have **cinder bats**, which flutter as a warning and then dive
 through head height in a fixed arc (burn them or step aside), and the World 6
 highlands have **springboards** that throw you up to coin arcs out of normal reach.
