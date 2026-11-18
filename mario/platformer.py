@@ -47,6 +47,7 @@ import time
 import pygame
 
 import levels as LV
+import music as MU
 import two_hand_spike as tracker_mod
 from two_hand_spike import (
     LOG_FIELDS, RUN_THRESHOLD, STEER_DEADZONE, STEER_ZONE, TwoHandTracker, clamp,
@@ -1608,7 +1609,7 @@ class Level:
 # ==========================================
 class Game:
     def __init__(self, world=1, level=1, use_camera=True, camera_id=0,
-                 log_path=None, fullscreen=False):
+                 log_path=None, fullscreen=False, audio=True):
         pygame.init()
         pygame.display.set_caption("Gesture Platformer")
         # SCALED: the game always draws at 1280x720 and the GPU stretches that to
@@ -1659,6 +1660,8 @@ class Game:
         }
         self.sky_cache = {}
         self.mk_cache = {}               # boss frames, by (mouth, glow) step
+        self.music = MU.Music(enabled=audio)
+        self.boss_music = False          # inside a boss arena
         self.inks = []
 
         self.log_path = log_path
@@ -1680,6 +1683,11 @@ class Game:
         self.run_start = time.perf_counter()
         self.world, self.level_no = world, level
         self.load_level(world, level)
+        if self.music.ok:
+            # Render the first level's tune now and the rest while it plays.
+            first = MU.TRACK_FOR_THEME.get(self.level.theme, "meadow")
+            MU.Music.prewarm([first, "dead", "clear", "boss", "bonus"]
+                             + list(MU.ALL_LOOPS) + ["gameover", "win"])
         self.state = "play"
         self.state_until = 0.0
         self.toast = ""
@@ -1728,6 +1736,36 @@ class Game:
         self.hammers = []
         self.inks = []
 
+    # ---------- music ----------
+    def music_track(self):
+        """What should be playing right now."""
+        st = self.state
+        if st == "dead":
+            return "dead"
+        if st == "gameover":
+            return "gameover"
+        if st == "won":
+            return "clear"
+        if st == "complete":
+            return "win"
+        if st == "piping":
+            return self.music.current or MU.TRACK_FOR_THEME.get(self.level.theme)
+        if self.in_bonus:
+            return "bonus"
+        h = self.hero
+        # In a boss arena the music changes; it changes back a little further out,
+        # so walking along the edge does not flip it back and forth.
+        reach = (15 if self.boss_music else 11) * TILE
+        for e in self.enemies:
+            if e.kind in BOSSES and e.alive and e.dying <= 0 and abs(e.x - h.x) < reach:
+                self.boss_music = True
+                return "boss"
+        self.boss_music = False
+        return MU.TRACK_FOR_THEME.get(self.level.theme, "meadow")
+
+    def toggle_music(self, now):
+        muted = self.music.toggle_mute()
+        self._toast("music off" if muted else "music on", now, 1.0)
 
     def respawn_point(self):
         """The last checkpoint banner passed, or the start."""
@@ -1802,6 +1840,8 @@ class Game:
                         self.toggle_fullscreen()
                     elif event.key in (pygame.K_ESCAPE, pygame.K_q):
                         running = False
+                    elif event.key == pygame.K_m:
+                        self.toggle_music(now)
                     elif event.key == pygame.K_h and self.tracker:
                         sw = self.tracker.toggle_hand_polarity()
                         self._toast("hand detection swapped" if sw
@@ -1905,6 +1945,7 @@ class Game:
 
     # ---------- simulation ----------
     def update(self, analog, run_flag, duck, dt, now):
+        self.music.play(self.music_track())
         if self.state == "piping":
             if now >= self.state_until:
                 self.finish_pipe(now)
@@ -3387,6 +3428,8 @@ def parse_args(argv):
                    help="start in full screen (or press F while playing)")
     p.add_argument("--cpu-tracking", action="store_true",
                    help="run hand tracking on the CPU instead of the GPU")
+    p.add_argument("--no-music", action="store_true",
+                   help="start with the music off (or press M while playing)")
     return p.parse_args(argv)
 
 
@@ -3402,7 +3445,8 @@ if __name__ == "__main__":
         tracker_mod.USE_GPU = False
     game = Game(world=opts.world, level=opts.level,
                 use_camera=not opts.no_camera, camera_id=opts.camera,
-                log_path=path, fullscreen=opts.fullscreen)
+                log_path=path, fullscreen=opts.fullscreen,
+                audio=not opts.no_music)
     if opts.swap_hands and game.tracker:
         game.tracker.swap_handedness = True
     game.run()

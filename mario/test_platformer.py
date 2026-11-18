@@ -7,6 +7,7 @@ that will feel broken at 50-80ms of input latency.
 """
 import os, sys, math
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
+os.environ.setdefault("SDL_AUDIODRIVER", "dummy")      # the music must never actually play in a test
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pygame
 import levels as LV
@@ -881,6 +882,83 @@ g.collide_entities(now)
 check("fire kills an octopus", oc.dying > 0)
 g.step_world(DT, now)
 check("which bursts into ink as it goes", len(g.inks) == 1)
+
+print("\n[22] music: original tunes, one for every theme")
+import music as MU
+check("a tune for every theme the levels use",
+      all(MU.TRACK_FOR_THEME.get(LV.load(w, l)["theme"]) in MU.TRACKS for w, l in ALL),
+      str(sorted({LV.load(w, l)["theme"] for w, l in ALL})))
+check("at least a dozen different tunes", len(MU.TRACKS) >= 12, str(len(MU.TRACKS)))
+rendered = {}
+for name in list(MU.TRACKS) + list(MU.JINGLES):
+    rendered[name] = MU.render(name)
+bad = [n for n, a in rendered.items() if len(a) < MU.SR or not a.any()]
+check("every tune and jingle renders, and is not silent", not bad, str(bad))
+check("none clips", all(int(abs(a.astype(int)).max()) <= 32767 * 0.85
+                        for a in rendered.values()))
+check("loops are 15-45 seconds, jingles under 12",
+      all(15 <= len(rendered[n]) / MU.SR <= 45 for n in MU.TRACKS)
+      and all(len(rendered[n]) / MU.SR < 12 for n in MU.JINGLES))
+check("loops start and end at silence, so they repeat without a click",
+      all(abs(int(rendered[n][0]) - int(rendered[n][-1])) < 32767 * 0.08
+          for n in MU.TRACKS))
+check("the tunes really are different from each other",
+      len({rendered[n][:20000].tobytes() for n in MU.TRACKS}) == len(MU.TRACKS))
+# What plays when.
+g = new_game(1, 1)
+check("level 1-1 plays the meadow tune", g.music_track() == "meadow")
+g.update(0.0, False, False, DT, 9700.0)
+check("the music object follows", g.music.current == "meadow")
+g.state = "dead"
+check("dying plays the dead jingle", g.music_track() == "dead")
+g.state = "won"
+check("clearing a level plays the clear jingle", g.music_track() == "clear")
+g.state = "gameover"
+check("game over plays its jingle", g.music_track() == "gameover")
+g.state = "play"
+g.in_bonus = True
+check("a bonus room has its own tune", g.music_track() == "bonus")
+g.in_bonus = False
+g = new_game(8, 4)
+boss = next(e for e in g.enemies if e.kind in P.BOSSES)
+g.hero.x = boss.x - 30 * P.TILE
+check("far from the boss it is the level's tune", g.music_track() == "keep")
+g.hero.x = boss.x - 9 * P.TILE
+check("walking into the arena switches to the boss tune", g.music_track() == "boss")
+g.hero.x = boss.x - 13 * P.TILE
+check("and it does not flip back at the first step away", g.music_track() == "boss")
+g.hero.x = boss.x - 20 * P.TILE
+check("only well clear of the arena", g.music_track() == "keep")
+boss.dying = 0.2
+g.hero.x = boss.x - 5 * P.TILE
+check("a beaten boss stops the boss tune", g.music_track() == "keep")
+for w, l in ((5, 3), (6, 3), (7, 1), (8, 2), (2, 2), (3, 1), (1, 2)):
+    gg = new_game(w, l)
+    want = MU.TRACK_FOR_THEME[LV.load(w, l)["theme"]]
+    check(f"{w}-{l} plays {want}", gg.music_track() == want)
+# The player.
+m = MU.Music(enabled=False)
+m.play("meadow")
+check("with audio off it still tracks what would play", m.current == "meadow" and not m.ok)
+m = MU.Music(enabled=True)
+m.play("cave")
+m.play("cave")
+check("asking for the tune already playing does nothing", m.current == "cave")
+if m.ok:
+    check("mute stops it and unmute brings it back",
+          m.toggle_mute() is True and m.toggle_mute() is False and m.current == "cave")
+import tempfile, wave
+tmp = tempfile.mkdtemp()
+with wave.open(os.path.join(tmp, "meadow.wav"), "wb") as wf:
+    wf.setnchannels(1); wf.setsampwidth(2); wf.setframerate(MU.SR)
+    wf.writeframes(b"\0\0" * MU.SR)
+old_dir, MU.MUSIC_DIR = MU.MUSIC_DIR, tmp
+check("a file in music/ replaces the built-in tune",
+      MU.user_file("meadow") and MU.user_file("cave") is None)
+MU.MUSIC_DIR = old_dir
+g = new_game(1, 1)
+g.toggle_music(9800.0)
+check("M toggles the music and says so", g.music.muted and g.toast.startswith("music"))
 
 print("\n[11] one frame of every level renders")
 for w, l in ALL:

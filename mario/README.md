@@ -67,6 +67,26 @@ The castles also have **cinder bats**, which flutter as a warning and then dive
 through head height in a fixed arc (burn them or step aside), and the World 6
 highlands have **springboards** that throw you up to coin arcs out of normal reach.
 
+## Music
+
+Every level has its own tune, and so do the boss arenas, the bonus rooms and the
+moments between (dying, clearing a level, game over, finishing the game). **All of
+it is original**: composed in `music.py` as data (a key, a chord progression and a few
+melodic shapes) and synthesized when the game starts, with square, pulse and triangle
+voices and noise drums. No audio files ship with the game and nothing is borrowed from
+any other game. Each theme has its own tune: meadow, cave, tide, night and castle for
+Worlds 1-4, then amber, harvest, frost, aurora, storm, ashen and keep for Worlds 5-8.
+In a boss arena the music changes to the boss tune, and goes back when you walk away or
+win.
+
+To use your own music instead, put `<name>.ogg`, `.wav` or `.mp3` in a `music/`
+folder next to `platformer.py`. A file there replaces the built-in tune of the same
+name: `meadow`, `cave`, `tide`, `night`, `castle`, `amber`, `harvest`, `frost`,
+`aurora`, `storm`, `ashen`, `keep`, `boss`, `bonus`, and the one-shot jingles `dead`,
+`clear`, `gameover` and `win`. `M` mutes, `--no-music` starts silent, and if there is
+no audio device the game just plays silently. Tests run on SDL's dummy audio driver, so
+they never make a sound.
+
 ## Running and options
 
 ```bash
@@ -88,6 +108,7 @@ Anything after the game name is passed straight through to `platformer.py`:
 | `--swap-hands` | Flip which physical hand steers, for a camera that reports handedness reversed. `H` does the same mid-game |
 | `--log [PATH]` | Record every hand pose and gesture event to CSV, for `analyse_log.py` |
 | `--fullscreen` | Start in full screen. `F` toggles it mid-game |
+| `--no-music` | Start with the music off. `M` toggles it mid-game |
 | `--cpu-tracking` | Run hand tracking on the CPU instead of the GPU (see below). Only needed if GPU tracking misbehaves |
 
 ### Heat and battery
@@ -142,6 +163,7 @@ pygame's `SCALED` mode has the GPU stretch it to the screen, with thin bars on a
 | `N` | Skip to the next level |
 | `R` | Restart from the first life |
 | `F` | Toggle full screen |
+| `M` | Toggle the music |
 | `Esc` | Leave full screen; quit when in a window |
 | `Q` | Quit |
 | Arrows, `Shift`, `Space`, `X`, `Down` | Keyboard fallback: move, run, jump, fire, duck — always live alongside the camera |
