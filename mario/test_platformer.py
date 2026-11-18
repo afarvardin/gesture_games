@@ -839,6 +839,49 @@ g.fireballs = [P.Fireball(pl.x + 36, pl.y - 6, 0.0, now)]
 g.collide_entities(now)
 check("and cannot touch one that is hidden", pl.dying == 0 and g.fireballs[0].alive)
 
+print("\n[21] octopuses: jet at where you were, squirt ink, flee")
+for name in ("2-2", "7-2"):
+    w, l = map(int, name.split("-"))
+    n = sum(1 for _, _, k in LV.load(w, l)["enemies"] if k == "octopus")
+    check(f"{name} has octopuses", n >= 3, str(n))
+check("only the swimming levels do", all(
+    not any(k == "octopus" for _, _, k in LV.load(w, l)["enemies"])
+    for w, l in ALL if (w, l) not in ((2, 2), (7, 2))))
+g = new_game(7, 2)
+oc = next(e for e in g.enemies if e.kind == "octopus")
+g.enemies = [oc]
+h = g.hero
+now = 9600.0
+x0, ys, most_ink = oc.x, [], 0
+fled = False
+for _ in range(int(30 * P.FPS)):
+    now += DT
+    h.x, h.y, h.vy, h.invuln_until = x0 - 4 * P.TILE, oc.y + 10, 0.0, now + 99
+    g.update(0.0, False, False, DT, now)
+    ys.append(oc.y)
+    most_ink = max(most_ink, len(g.inks))
+    if oc.oct_state == "pulse" and oc.pulses % P.OCT_INK_EVERY == 0 and oc.dirx > 0.3:
+        fled = True               # hero is to its left; fleeing means going right
+check("it comes after you", abs(oc.x - x0) > 40, f"moved {oc.x - x0:+.0f}px")
+check("it stays inside the water", min(ys) - oc.H >= 2 * P.TILE - 1
+      and max(ys) <= LV.FLOOR * P.TILE, f"{min(ys) - oc.H:.0f}..{max(ys):.0f}")
+check("it squirts ink", most_ink >= 1, f"{most_ink} clouds at most")
+check("and flees from the cloud it makes", fled)
+ink = P.Ink(500, 300, 100.0)
+check("a cloud hides what is inside it", ink.covers(500, 300, 100.8))
+check("and grows as it spreads", ink.scale(100.0) < ink.scale(100.7) <= 1.0)
+check("then thins out", ink.alpha(100.0) > 200 and ink.alpha(100 + P.INK_LIFE) <= 1)
+ink.update(100 + P.INK_LIFE + 0.1)
+check("and is gone", not ink.alive)
+g = new_game(7, 2)
+oc = next(e for e in g.enemies if e.kind == "octopus")
+g.enemies = [oc]
+g.fireballs = [P.Fireball(oc.x + 16, oc.y - 16, 0.0, now)]
+g.collide_entities(now)
+check("fire kills an octopus", oc.dying > 0)
+g.step_world(DT, now)
+check("which bursts into ink as it goes", len(g.inks) == 1)
+
 print("\n[11] one frame of every level renders")
 for w, l in ALL:
     try:

@@ -159,6 +159,17 @@ PIRANHA_UP = 1.3                  # s it stays out
 PIRANHA_HIDE = 1.7                # s it stays down
 PIRANHA_SHY = 1.7 * TILE          # px, hero centre to pipe centre: no emerging
 
+# Octopuses (the underwater levels): they drift, then jet at where you were, and
+# every third jet they squirt a cloud of ink and flee. Aimed at where you WERE,
+# so a swimmer who keeps moving dodges every jet.
+OCT_SINK = 0.5                    # px/frame of drift between jets
+OCT_REST = 1.1                    # s between jets
+OCT_PULSE = 0.55                  # s of a jet
+OCT_SPEED = 3.6                   # px/frame at the peak of a jet
+OCT_WAKE = 12 * TILE              # px: they only stir when you are this close
+OCT_INK_RANGE = 8 * TILE
+OCT_INK_EVERY = 3                 # every Nth jet is an ink-and-flee
+INK_LIFE = 4.6                    # s a cloud of ink lasts
 
 SKELETON_SPEED = 1.0              # px/frame; a shade slower than a goomba
 SKELETON_REST = 3.4               # s a stomped skeleton lies in a heap
@@ -516,6 +527,26 @@ BAT_DOWN = [
     "nn.NN.nn",
     "n......n",
 ]
+OCTOPUS_OPEN = [                     # tentacles trailing: drifting
+    "..UUUU..",
+    ".uUUUUU.",
+    "UUWKUWKU",
+    "UUUUUUUU",
+    ".UUUUUU.",
+    "U.UUUU.U",
+    "U.U..U.U",
+    ".U....U.",
+]
+OCTOPUS_SHUT = [                     # tentacles gathered: mid-jet
+    "..UUUU..",
+    ".uUUUUU.",
+    "UUWKUWKU",
+    "UUUUUUUU",
+    ".UUUUUU.",
+    "..UUUU..",
+    "..U..U..",
+    "..U..U..",
+]
 BONES_PIXELS = [                     # stomped: a heap that pulls itself back up
     "........",
     "........",
@@ -534,6 +565,7 @@ PIXEL_COLORS = {
     "z": (196, 128, 20), "V": (104, 112, 52), "y": (206, 214, 80),
     "s": (196, 198, 176), "D": (232, 226, 206), "d": (160, 150, 130),
     "e": (255, 110, 40), "N": (96, 66, 84), "n": (226, 104, 52),
+    "U": (150, 74, 176), "u": (206, 132, 220),
     "K": (20, 20, 30), "E": (168, 84, 36),
     "F": (72, 40, 20), "W": (250, 250, 250), "G": (60, 180, 70),
     "Y": (240, 210, 90), "M": (228, 60, 50), "O": (250, 170, 60),
@@ -928,6 +960,35 @@ class Hammer:
             self.alive = False
 
 
+class Ink:
+    """A cloud of octopus ink: harmless, but it hides whatever is inside it."""
+
+    def __init__(self, x, y, born):
+        self.x, self.y, self.born = float(x), float(y), born
+        self.alive = True
+        # A fixed scatter of blobs, so a cloud looks the same every time.
+        self.blobs = [(math.cos(i * 2.4) * (10 + (i % 5) * 15),
+                       math.sin(i * 2.4) * (8 + (i % 4) * 12), 24 + (i * 7) % 20)
+                      for i in range(16)]
+
+    def update(self, now):
+        if now - self.born > INK_LIFE:
+            self.alive = False
+
+    def scale(self, now):
+        return 0.35 + 0.65 * min(1.0, (now - self.born) / 0.7)
+
+    def alpha(self, now):
+        age = now - self.born
+        fade = max(0.0, (age - 0.55 * INK_LIFE) / (0.45 * INK_LIFE))
+        return int(236 * (1.0 - fade))
+
+    def covers(self, px, py, now):
+        sc = self.scale(now)
+        return any(math.hypot(px - (self.x + bx * sc), py - (self.y + by * sc)) < r * sc
+                   for bx, by, r in self.blobs)
+
+
 class Mushroom:
     """Any mushroom: kind is "mushroom" (grow), "life", "spring", "gold" or "rot"."""
     W = H = 30
@@ -1016,6 +1077,15 @@ class Enemy:
             self.timer = now + 0.9 + (x % 7) * 0.19   # staggered, never random
             self.target_y = 0.0
             self.over_pipe = False               # hero standing on its pipe
+        if kind == "octopus":
+            self.W = self.H = 32
+            self.oct_state = "drift"
+            self.oct_t0 = 0.0
+            self.pulses = 0
+            self.dirx = self.diry = 0.0
+            self.timer = now + 0.8 + (x % 11) * 0.13
+            self.target_y = 0.0
+            self.inked = False                   # has burst on death
         if kind == "bat":
             self.H = 24
             self.bat_state = "hang"              # hang -> wake -> swoop -> hang
@@ -1040,7 +1110,7 @@ class Enemy:
         # A spiny has spikes on its back: fire is the only way past it, which is the
         # mirror image of the buzzy beetle shrugging off fire.
         return self.kind in ("goomba", "koopa", "cheep", "buzzy", "para", "hammer",
-                             "bullet", "skeleton", "bat")   # not spiny, not
+                             "bullet", "skeleton", "bat", "octopus")   # not spiny, not
                                                      # bowser (armoured)
 
     @property
@@ -1174,6 +1244,33 @@ class Enemy:
                     self.pl_phase, self.timer = "down", now + PIRANHA_HIDE
             return
 
+        if self.kind == "octopus":
+            floor_y = LV.FLOOR * TILE - 4
+            if self.oct_state == "drift":
+                self.y += OCT_SINK + math.sin(now * 3 + self.home_x) * 0.35
+                awake = abs(self.target_x - self.x) < OCT_WAKE
+                if awake and now >= self.timer:
+                    self.oct_state, self.oct_t0 = "pulse", now
+                    self.pulses += 1
+                    # Aim at where the hero is NOW; it cannot steer mid-jet.
+                    dx = (self.target_x + 15) - (self.x + 16)
+                    dy = (self.target_y - 20) - (self.y - 16)
+                    d = math.hypot(dx, dy) or 1.0
+                    if self.pulses % OCT_INK_EVERY == 0 and d < OCT_INK_RANGE:
+                        self.throw_now = True               # squirt, then flee
+                        self.dirx, self.diry = -dx / d, -dy / d - 0.3
+                    else:
+                        self.dirx, self.diry = dx / d, dy / d
+            else:
+                t = (now - self.oct_t0) / OCT_PULSE
+                if t >= 1.0:
+                    self.oct_state, self.timer = "drift", now + OCT_REST
+                else:
+                    v = OCT_SPEED * math.sin(math.pi * t)
+                    self.x += self.dirx * v
+                    self.y += self.diry * v
+            self.x = clamp(self.x, 8, level.pw - 40)
+            self.y = clamp(self.y, 2 * TILE + self.H, floor_y)
             return
 
         if self.kind == "bat":
@@ -1554,12 +1651,15 @@ class Game:
             "skel_a_r": build_sprite(SKELETON_A, 4, flip=True),
             "skel_b_r": build_sprite(SKELETON_B, 4, flip=True),
             "bones": build_sprite(BONES_PIXELS, 4),
+            "oct_open": build_sprite(OCTOPUS_OPEN, 4),
+            "oct_shut": build_sprite(OCTOPUS_SHUT, 4),
             "bat_hang": build_sprite(BAT_HANG, 4),
             "bat_up": build_sprite(BAT_UP, 4),
             "bat_down": build_sprite(BAT_DOWN, 4),
         }
         self.sky_cache = {}
         self.mk_cache = {}               # boss frames, by (mouth, glow) step
+        self.inks = []
 
         self.log_path = log_path
         self._csv_file = self._csv = None
@@ -1626,6 +1726,8 @@ class Game:
         self.fireballs = []
         self.items = []
         self.hammers = []
+        self.inks = []
+
 
     def respawn_point(self):
         """The last checkpoint banner passed, or the start."""
@@ -1989,7 +2091,7 @@ class Game:
         self.items = [it for it in self.items if it.alive]
         spawned = []
         for e in self.enemies:
-            if e.kind in ("lakitu", "skeleton", "bat", "piranha"):
+            if e.kind in ("lakitu", "skeleton", "bat", "piranha", "octopus"):
                 e.target_x = self.hero.x
                 e.target_y = self.hero.y          # feet
             e.update(self.level, dt, now)
@@ -2001,10 +2103,15 @@ class Game:
                     self.hammers.append(Hammer(e.x + 16 + d * 30, e.home_y - 9,
                                                QUAKE_SPEED * d, now, flat=True,
                                                quake=True))
+            if e.kind == "octopus" and e.dying > 0 and not e.inked:
+                e.inked = True                      # a last burst as it goes
+                self.inks.append(Ink(e.x + 16, e.y - 16, now))
             if not getattr(e, "throw_now", False):
                 continue
             e.throw_now = False
-            if e.kind == "hammer":
+            if e.kind == "octopus":
+                self.inks.append(Ink(e.x + 16, e.y - 16, now))
+            elif e.kind == "hammer":
                 direction = -1 if self.hero.x < e.x else 1
                 self.hammers.append(Hammer(e.x + 16, e.y - 30,
                                            HAMMER_VX * direction, now))
@@ -2038,6 +2145,9 @@ class Game:
                     lead = SPINY_LEAD * (1 if self.hero.facing >= 0 else -1)
                     spawned.append(Enemy(e.x + lead, e.y + TILE, "spiny", now))
         self.enemies = [e for e in self.enemies if e.alive] + spawned
+        for ink in self.inks:
+            ink.update(now)
+        self.inks = [i for i in self.inks if i.alive]
         for key in list(self.level.bumps):
             self.level.bumps[key] -= dt
             if self.level.bumps[key] <= 0:
@@ -2307,6 +2417,7 @@ class Game:
         self.draw_tiles(th, ox, now)
         self.draw_loop_gates(ox, now)
         self.draw_entities(ox, now)
+        self.draw_inks(ox, now)
         self.draw_weather(th, ox, now)
         self.draw_hud(snap, now)
         self.draw_overlays(now)
@@ -2787,6 +2898,35 @@ class Game:
                     (hx + dx + 3, cy + 2 - mh // 2)])
         s.set_clip(None)
 
+    def draw_octopus(self, e, r, ox, now):
+        if e.dying > 0:
+            spr = self.spr["oct_shut"].copy()
+            spr.set_alpha(int(255 * e.dying / 0.25))
+        else:
+            spr = self.spr["oct_shut" if e.oct_state == "pulse" else "oct_open"]
+        if e.oct_state == "drift" and e.dying <= 0:
+            # Tentacles waving, and the eyes follow you.
+            glow = pygame.Surface((56, 52), pygame.SRCALPHA)
+            pygame.draw.ellipse(glow, (150, 74, 176, 40), (0, 0, 56, 52))
+            self.screen.blit(glow, (r.x - ox - 12, r.y + HUD_H - 10))
+        self.screen.blit(spr, (r.x - ox, r.y + HUD_H))
+
+    def draw_inks(self, ox, now):
+        """Over everything, the hero included: ink is for not seeing."""
+        for ink in self.inks:
+            sc, a = ink.scale(now), ink.alpha(now)
+            if a <= 0:
+                continue
+            cx = int(ink.x - ox)
+            cy = int(ink.y + HUD_H - 12 * (now - ink.born))     # it drifts up
+            if cx < -160 or cx > WIDTH + 160:
+                continue
+            surf = pygame.Surface((300, 240), pygame.SRCALPHA)
+            for bx, by, r in ink.blobs:
+                pygame.draw.circle(surf, (8, 6, 18, a), (150 + int(bx * sc),
+                                   120 + int(by * sc)), int(r * sc))
+            self.screen.blit(surf, (cx - 150, cy - 120))
+
     def draw_skeleton(self, e, r, ox, now):
         """Walking, a heap of bones, or a heap about to stand up (it rattles)."""
         if e.dying > 0 or e.collapsed:
@@ -2828,6 +2968,8 @@ class Game:
             if e.kind == "piranha":
                 self.draw_piranha(e, ox, now)
                 continue
+            if e.kind == "octopus":
+                self.draw_octopus(e, r, ox, now)
                 continue
             if e.kind == "bat" and e.dying <= 0:
                 if e.bat_state == "hang":

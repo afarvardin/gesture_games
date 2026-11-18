@@ -57,7 +57,11 @@ Every level from World 5 on also has:
 will not come out while you stand close), they rise and sink on a timer, and one
 never catches you standing on its pipe, so a plant is something you time on the
 approach rather than a surprise on landing. Fire kills one that is out; stomping does
-not.
+not. **Octopuses** drift through the swimming levels (2-2 and 7-2). They jet at where
+you *were*, so a swimmer who keeps moving dodges them, and every third jet they
+squirt a cloud of black ink and flee. The ink is harmless but hides everything in it,
+you included, for a few seconds. Fire or a stomp kills one, and it bursts into ink
+as it goes.
 
 The castles also have **cinder bats**, which flutter as a warning and then dive
 through head height in a fixed arc (burn them or step aside), and the World 6

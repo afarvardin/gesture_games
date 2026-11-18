@@ -766,6 +766,9 @@ def w2_2():
     b.coins(FLOOR - 6, 88, 5)
     b.pipe(110, height=3)
     b.axe(116)
+    b.swimmer(30, 6, "octopus")
+    b.swimmer(66, 5, "octopus")
+    b.swimmer(100, 7, "octopus")
     return b.build()
 
 
@@ -1479,6 +1482,11 @@ def w7_2():
     b.gem(7, 19)
     b.gem(7, 57)
     b.gem(7, 95)
+    b.swimmer(26, 6, "octopus")
+    b.swimmer(44, 7, "octopus")
+    b.swimmer(62, 5, "octopus")
+    b.swimmer(80, 6, "octopus")
+    b.swimmer(98, 4, "octopus")
     return b.build()
 
 
